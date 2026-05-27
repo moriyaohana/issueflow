@@ -10,6 +10,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { TicketsModule } from './tickets/tickets.module';
 import { CommentsModule } from './comments/comments.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
+import { DependenciesModule } from './tickets/dependencies/dependencies.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AuditLogModule } from './audit-log/audit-log.module';
     ProjectsModule,
     TicketsModule,
     CommentsModule,
+    DependenciesModule,
   ],
   controllers: [HealthController],
 })
