@@ -109,4 +109,18 @@ export class UsersService {
     const count = await this.users.count({ where: { id, deletedAt: IsNull() } });
     return count > 0;
   }
+
+  /**
+   * Case-insensitive lookup for @mention parsing. Soft-deleted users are
+   * excluded so we never persist mentions pointing at hidden accounts.
+   */
+  async findByUsernamesCaseInsensitive(usernames: string[]): Promise<User[]> {
+    if (usernames.length === 0) return [];
+    const lower = usernames.map((u) => u.toLowerCase());
+    return this.users
+      .createQueryBuilder('u')
+      .where('LOWER(u.username) IN (:...lower)', { lower })
+      .andWhere('u.deletedAt IS NULL')
+      .getMany();
+  }
 }
