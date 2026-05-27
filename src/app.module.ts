@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { buildTypeOrmOptions } from './config/typeorm.config';
 import { HealthController } from './health.controller';
 import { UsersModule } from './users/users.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -16,10 +17,8 @@ import { UsersModule } from './users/users.module';
     }),
     ScheduleModule.forRoot(),
     UsersModule,
+    AuthModule,
   ],
   controllers: [HealthController],
-  providers: [
-    // TODO Agent 3: register JwtAuthGuard as APP_GUARD here.
-  ],
 })
 export class AppModule {}

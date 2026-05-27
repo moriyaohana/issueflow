@@ -1,0 +1,56 @@
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { ConfigService } from '@nestjs/config';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { UsersService } from '../../users/users.service';
+import { InvalidatedTokensService } from '../invalidated-tokens.service';
+
+export interface JwtPayload {
+  sub: number;
+  username: string;
+  role: string;
+  jti: string;
+  exp?: number;
+  iat?: number;
+}
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor(
+    config: ConfigService,
+    private readonly users: UsersService,
+    private readonly invalidated: InvalidatedTokensService,
+  ) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: config.get<string>('JWT_SECRET', 'dev-secret-change-me'),
+    });
+  }
+
+  /**
+   * Validates a decoded JWT payload. Three rejection paths exist:
+   *   1. The `jti` is in the deny-list (token was explicitly logged out).
+   *   2. The user no longer exists (account was hard-deleted - shouldn't
+   *      happen in this system but defended for safety).
+   *   3. The user was soft-deleted after the token was issued.
+   */
+  async validate(payload: JwtPayload): Promise<{ id: number; username: string; role: string; jti: string }> {
+    if (!payload?.jti) {
+      throw new UnauthorizedException('Token missing jti');
+    }
+    if (await this.invalidated.has(payload.jti)) {
+      throw new UnauthorizedException('Token has been revoked');
+    }
+    const active = await this.users.existsAndActive(payload.sub);
+    if (!active) {
+      throw new UnauthorizedException('User no longer active');
+    }
+    return {
+      id: payload.sub,
+      username: payload.username,
+      role: payload.role,
+      jti: payload.jti,
+    };
+  }
+}

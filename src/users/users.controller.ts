@@ -13,7 +13,6 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
-import { Public } from '../common/decorators/public.decorator';
 
 @Controller('users')
 export class UsersController {
@@ -29,10 +28,6 @@ export class UsersController {
     return this.users.findOne(userId);
   }
 
-  // Bootstrap path: Agent 3 marks routes that don't require auth via @Public.
-  // Until auth lands the global guard is absent, so the @Public marker is a
-  // no-op now and starts taking effect once JwtAuthGuard is registered.
-  @Public()
   @Post()
   @HttpCode(HttpStatus.OK)
   create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
