@@ -13,6 +13,7 @@ import { AuditLogModule } from './audit-log/audit-log.module';
 import { DependenciesModule } from './tickets/dependencies/dependencies.module';
 import { AttachmentsModule } from './tickets/attachments/attachments.module';
 import { EscalationModule } from './tickets/escalation/escalation.module';
+import { AutoAssignModule } from './tickets/auto-assign/auto-assign.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { EscalationModule } from './tickets/escalation/escalation.module';
     DependenciesModule,
     AttachmentsModule,
     EscalationModule,
+    AutoAssignModule,
   ],
   controllers: [HealthController],
 })

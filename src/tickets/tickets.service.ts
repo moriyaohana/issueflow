@@ -70,8 +70,10 @@ export class TicketsService {
     }
 
     let assigneeId = dto.assigneeId ?? null;
+    let autoAssigned = false;
     if (assigneeId == null && this.autoAssign) {
       assigneeId = await this.autoAssign.pickAssignee(dto.projectId);
+      autoAssigned = assigneeId != null;
     }
 
     const ticket = this.tickets.create({
@@ -96,6 +98,19 @@ export class TicketsService {
       performedBy: actorUserId,
       actor: ActorType.USER,
     });
+    if (autoAssigned && assigneeId != null) {
+      // Auto-assignment is a system-driven decision triggered as a side-effect
+      // of the user's CREATE. Audit it separately so reports can filter on
+      // actor=SYSTEM.
+      await this.audit.record({
+        action: AuditAction.AUTO_ASSIGN,
+        entityType: EntityType.TICKET,
+        entityId: saved.id,
+        performedBy: null,
+        actor: ActorType.SYSTEM,
+        metadata: { assignedTo: assigneeId },
+      });
+    }
     return saved;
   }
 
