@@ -12,6 +12,7 @@ import { CommentsModule } from './comments/comments.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { DependenciesModule } from './tickets/dependencies/dependencies.module';
 import { AttachmentsModule } from './tickets/attachments/attachments.module';
+import { EscalationModule } from './tickets/escalation/escalation.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AttachmentsModule } from './tickets/attachments/attachments.module';
     CommentsModule,
     DependenciesModule,
     AttachmentsModule,
+    EscalationModule,
   ],
   controllers: [HealthController],
 })
