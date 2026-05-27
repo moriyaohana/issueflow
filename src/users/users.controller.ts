@@ -13,6 +13,7 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
+import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
 @Controller('users')
 export class UsersController {
@@ -30,8 +31,11 @@ export class UsersController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
-    return this.users.create(dto);
+  create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<UserResponseDto> {
+    return this.users.create(dto, actor?.id ?? null);
   }
 
   @Post('update/:userId')
@@ -39,13 +43,17 @@ export class UsersController {
   update(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() dto: UpdateUserDto,
+    @CurrentUser() actor: CurrentUserPayload,
   ): Promise<UserResponseDto> {
-    return this.users.update(userId, dto);
+    return this.users.update(userId, dto, actor?.id ?? null);
   }
 
   @Delete(':userId')
   @HttpCode(HttpStatus.OK)
-  async delete(@Param('userId', ParseIntPipe) userId: number): Promise<void> {
-    await this.users.softDelete(userId);
+  async delete(
+    @Param('userId', ParseIntPipe) userId: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<void> {
+    await this.users.softDelete(userId, actor?.id ?? null);
   }
 }

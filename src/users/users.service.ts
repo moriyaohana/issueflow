@@ -11,6 +11,10 @@ import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../common/enums/audit-action.enum';
+import { EntityType } from '../common/enums/entity-type.enum';
+import { ActorType } from '../common/enums/actor-type.enum';
 
 // Postgres unique-violation error code; surfaced as 409 instead of 500.
 const PG_UNIQUE_VIOLATION = '23505';
@@ -20,9 +24,10 @@ export class UsersService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly config: ConfigService,
+    private readonly audit: AuditLogService,
   ) {}
 
-  async create(dto: CreateUserDto): Promise<UserResponseDto> {
+  async create(dto: CreateUserDto, actorUserId: number | null = null): Promise<UserResponseDto> {
     const rounds = parseInt(this.config.get<string>('BCRYPT_ROUNDS', '10'), 10);
     const passwordHash = await bcrypt.hash(dto.password, rounds);
     const user = this.users.create({
@@ -34,6 +39,13 @@ export class UsersService {
     });
     try {
       const saved = await this.users.save(user);
+      await this.audit.record({
+        action: AuditAction.USER_CREATE,
+        entityType: EntityType.USER,
+        entityId: saved.id,
+        performedBy: actorUserId,
+        actor: ActorType.USER,
+      });
       return UserResponseDto.fromEntity(saved);
     } catch (err: any) {
       if (err?.code === PG_UNIQUE_VIOLATION) {
@@ -68,28 +80,53 @@ export class UsersService {
     return user;
   }
 
-  async update(id: number, dto: UpdateUserDto): Promise<UserResponseDto> {
+  async update(
+    id: number,
+    dto: UpdateUserDto,
+    actorUserId: number | null = null,
+  ): Promise<UserResponseDto> {
     const user = await this.users.findOne({ where: { id, deletedAt: IsNull() } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
     if (dto.fullName !== undefined) user.fullName = dto.fullName;
     if (dto.role !== undefined) user.role = dto.role;
     const saved = await this.users.save(user);
+    await this.audit.record({
+      action: AuditAction.USER_UPDATE,
+      entityType: EntityType.USER,
+      entityId: saved.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
     return UserResponseDto.fromEntity(saved);
   }
 
-  async softDelete(id: number): Promise<void> {
+  async softDelete(id: number, actorUserId: number | null = null): Promise<void> {
     const user = await this.users.findOne({ where: { id, deletedAt: IsNull() } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
     await this.users.softRemove(user);
+    await this.audit.record({
+      action: AuditAction.USER_DELETE,
+      entityType: EntityType.USER,
+      entityId: user.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
   }
 
-  async restore(id: number): Promise<UserResponseDto> {
+  async restore(id: number, actorUserId: number | null = null): Promise<UserResponseDto> {
     const user = await this.findOneIncludingDeleted(id);
     if (!user.deletedAt) {
       return UserResponseDto.fromEntity(user);
     }
     await this.users.restore(id);
     const reloaded = await this.users.findOne({ where: { id } });
+    await this.audit.record({
+      action: AuditAction.USER_RESTORE,
+      entityType: EntityType.USER,
+      entityId: id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
     return UserResponseDto.fromEntity(reloaded);
   }
 

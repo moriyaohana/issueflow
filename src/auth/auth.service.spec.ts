@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { InvalidatedTokensService } from './invalidated-tokens.service';
 import { UserRole } from '../common/enums/user-role.enum';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -26,6 +27,7 @@ describe('AuthService', () => {
         { provide: InvalidatedTokensService, useValue: invalidated },
         { provide: JwtService, useValue: jwt },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('3600s') } },
+        { provide: AuditLogService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -69,7 +71,7 @@ describe('AuthService', () => {
   });
 
   it('logout adds the jti to the deny-list', async () => {
-    await service.logout('some-jti');
+    await service.logout('some-jti', 42);
     expect(invalidated.add).toHaveBeenCalledWith('some-jti', expect.any(Date));
   });
 });

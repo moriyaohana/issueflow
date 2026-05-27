@@ -13,11 +13,15 @@ import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { TicketStatus, TICKET_STATUS_ORDER } from '../common/enums/ticket-status.enum';
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../common/enums/audit-action.enum';
+import { EntityType } from '../common/enums/entity-type.enum';
+import { ActorType } from '../common/enums/actor-type.enum';
 
 export interface TicketCascadeTarget {
-  cascadeHardDeleteComments(ticketIds: number[]): Promise<void>;
+  cascadeHardDeleteComments(ticketIds: number[], actorUserId: number | null): Promise<void>;
   cascadeHardDeleteDependencies(ticketIds: number[]): Promise<void>;
-  cascadeHardDeleteAttachments(ticketIds: number[]): Promise<void>;
+  cascadeHardDeleteAttachments(ticketIds: number[], actorUserId: number | null): Promise<void>;
 }
 
 export interface BlockersResolver {
@@ -38,6 +42,7 @@ export class TicketsService {
     @InjectRepository(Ticket) private readonly tickets: Repository<Ticket>,
     private readonly projects: ProjectsService,
     private readonly users: UsersService,
+    private readonly audit: AuditLogService,
   ) {}
 
   registerCascadeTarget(t: Partial<TicketCascadeTarget>): void {
@@ -52,7 +57,7 @@ export class TicketsService {
     this.autoAssign = a;
   }
 
-  async create(dto: CreateTicketDto): Promise<Ticket> {
+  async create(dto: CreateTicketDto, actorUserId: number | null = null): Promise<Ticket> {
     const projectActive = await this.projects.existsAndActive(dto.projectId);
     if (!projectActive) {
       throw new NotFoundException(`Project ${dto.projectId} not found`);
@@ -83,7 +88,15 @@ export class TicketsService {
       autoEscalationPaused: false,
       deletedByCascade: false,
     });
-    return this.tickets.save(ticket);
+    const saved = await this.tickets.save(ticket);
+    await this.audit.record({
+      action: AuditAction.TICKET_CREATE,
+      entityType: EntityType.TICKET,
+      entityId: saved.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
+    return saved;
   }
 
   findAllForProject(projectId: number): Promise<Ticket[]> {
@@ -113,7 +126,11 @@ export class TicketsService {
    *   6. user-supplied priority pauses auto-escalation and clears isOverdue
    *   7. version increments on every successful save
    */
-  async update(id: number, dto: UpdateTicketDto): Promise<Ticket> {
+  async update(
+    id: number,
+    dto: UpdateTicketDto,
+    actorUserId: number | null = null,
+  ): Promise<Ticket> {
     const ticket = await this.tickets.findOne({ where: { id }, withDeleted: true });
     if (!ticket || ticket.deletedAt) {
       throw new NotFoundException(`Ticket ${id} not found`);
@@ -127,6 +144,8 @@ export class TicketsService {
         currentVersion: ticket.version,
       });
     }
+    const previousStatus = ticket.status;
+    const previousPriority = ticket.priority;
     if (dto.status !== undefined && dto.status !== ticket.status) {
       const currentIdx = TICKET_STATUS_ORDER.indexOf(ticket.status);
       const nextIdx = TICKET_STATUS_ORDER.indexOf(dto.status);
@@ -162,16 +181,41 @@ export class TicketsService {
       ticket.isOverdue = false;
     }
     ticket.version += 1;
-    return this.tickets.save(ticket);
+    const saved = await this.tickets.save(ticket);
+    const metadata: Record<string, unknown> = {};
+    if (saved.status !== previousStatus) {
+      metadata.statusFrom = previousStatus;
+      metadata.statusTo = saved.status;
+    }
+    if (saved.priority !== previousPriority) {
+      metadata.priorityFrom = previousPriority;
+      metadata.priorityTo = saved.priority;
+    }
+    await this.audit.record({
+      action: AuditAction.TICKET_UPDATE,
+      entityType: EntityType.TICKET,
+      entityId: saved.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    });
+    return saved;
   }
 
-  async softDelete(id: number): Promise<void> {
+  async softDelete(id: number, actorUserId: number | null = null): Promise<void> {
     const ticket = await this.findOne(id);
-    await this.runCascadeDeletes([ticket.id]);
+    await this.runCascadeDeletes([ticket.id], actorUserId);
     await this.tickets.softRemove(ticket);
+    await this.audit.record({
+      action: AuditAction.TICKET_DELETE,
+      entityType: EntityType.TICKET,
+      entityId: ticket.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
   }
 
-  async restore(id: number): Promise<Ticket> {
+  async restore(id: number, actorUserId: number | null = null): Promise<Ticket> {
     const ticket = await this.tickets.findOne({ where: { id }, withDeleted: true });
     if (!ticket) throw new NotFoundException(`Ticket ${id} not found`);
     if (!ticket.deletedAt) return ticket;
@@ -180,23 +224,46 @@ export class TicketsService {
       ticket.deletedByCascade = false;
       await this.tickets.update(id, { deletedByCascade: false });
     }
+    await this.audit.record({
+      action: AuditAction.TICKET_RESTORE,
+      entityType: EntityType.TICKET,
+      entityId: ticket.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
     return this.tickets.findOne({ where: { id } }) as Promise<Ticket>;
   }
 
   /** Cascade hook fired by ProjectsService.softDelete. */
-  async cascadeSoftDeleteForProject(projectId: number): Promise<void> {
+  async cascadeSoftDeleteForProject(
+    projectId: number,
+    actorUserId: number | null = null,
+  ): Promise<void> {
     const tickets = await this.tickets.find({
       where: { projectId, deletedAt: IsNull() },
     });
     if (tickets.length === 0) return;
     const ids = tickets.map((t) => t.id);
     await this.tickets.update({ id: In(ids) }, { deletedByCascade: true });
-    await this.runCascadeDeletes(ids);
+    await this.runCascadeDeletes(ids, actorUserId);
     await this.tickets.softRemove(tickets);
+    for (const t of tickets) {
+      await this.audit.record({
+        action: AuditAction.TICKET_DELETE,
+        entityType: EntityType.TICKET,
+        entityId: t.id,
+        performedBy: actorUserId,
+        actor: ActorType.USER,
+        metadata: { cascade: true, projectId },
+      });
+    }
   }
 
   /** Cascade hook fired by ProjectsService.restore. */
-  async cascadeRestoreForProject(projectId: number): Promise<void> {
+  async cascadeRestoreForProject(
+    projectId: number,
+    actorUserId: number | null = null,
+  ): Promise<void> {
     const candidates = await this.tickets.find({
       where: { projectId, deletedByCascade: true, deletedAt: Not(IsNull()) },
       withDeleted: true,
@@ -205,18 +272,31 @@ export class TicketsService {
     const ids = candidates.map((t) => t.id);
     await this.tickets.restore({ id: In(ids) });
     await this.tickets.update({ id: In(ids) }, { deletedByCascade: false });
+    for (const t of candidates) {
+      await this.audit.record({
+        action: AuditAction.TICKET_RESTORE,
+        entityType: EntityType.TICKET,
+        entityId: t.id,
+        performedBy: actorUserId,
+        actor: ActorType.USER,
+        metadata: { cascade: true, projectId },
+      });
+    }
   }
 
-  private async runCascadeDeletes(ticketIds: number[]): Promise<void> {
+  private async runCascadeDeletes(
+    ticketIds: number[],
+    actorUserId: number | null = null,
+  ): Promise<void> {
     if (ticketIds.length === 0) return;
     if (this.cascade.cascadeHardDeleteComments) {
-      await this.cascade.cascadeHardDeleteComments(ticketIds);
+      await this.cascade.cascadeHardDeleteComments(ticketIds, actorUserId);
     }
     if (this.cascade.cascadeHardDeleteDependencies) {
       await this.cascade.cascadeHardDeleteDependencies(ticketIds);
     }
     if (this.cascade.cascadeHardDeleteAttachments) {
-      await this.cascade.cascadeHardDeleteAttachments(ticketIds);
+      await this.cascade.cascadeHardDeleteAttachments(ticketIds, actorUserId);
     }
   }
 

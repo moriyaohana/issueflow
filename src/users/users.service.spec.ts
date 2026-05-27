@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
 import { UserRole } from '../common/enums/user-role.enum';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 type Repo<T> = Partial<Record<keyof any, jest.Mock>>;
 
@@ -29,6 +30,7 @@ describe('UsersService', () => {
         UsersService,
         { provide: getRepositoryToken(User), useValue: repo },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('4') } },
+        { provide: AuditLogService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

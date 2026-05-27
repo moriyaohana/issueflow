@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TicketsModule } from './tickets/tickets.module';
 import { CommentsModule } from './comments/comments.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { CommentsModule } from './comments/comments.module';
       useFactory: (config: ConfigService) => buildTypeOrmOptions(config),
     }),
     ScheduleModule.forRoot(),
+    AuditLogModule,
     UsersModule,
     AuthModule,
     ProjectsModule,

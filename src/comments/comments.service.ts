@@ -14,6 +14,10 @@ import { MentionParser } from './mentions/mention-parser';
 import { TicketsService } from '../tickets/tickets.service';
 import { UsersService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../common/enums/audit-action.enum';
+import { EntityType } from '../common/enums/entity-type.enum';
+import { ActorType } from '../common/enums/actor-type.enum';
 
 export interface CommentResponse {
   id: number;
@@ -41,9 +45,14 @@ export class CommentsService {
     private readonly mentionParser: MentionParser,
     private readonly tickets: TicketsService,
     private readonly users: UsersService,
+    private readonly audit: AuditLogService,
   ) {}
 
-  async create(ticketId: number, dto: CreateCommentDto): Promise<CommentResponse> {
+  async create(
+    ticketId: number,
+    dto: CreateCommentDto,
+    actorUserId: number | null = null,
+  ): Promise<CommentResponse> {
     if (!(await this.tickets.existsAndActive(ticketId))) {
       throw new NotFoundException(`Ticket ${ticketId} not found`);
     }
@@ -59,6 +68,14 @@ export class CommentsService {
         mentioned.map((u) => ({ commentId: saved.id, userId: u.id })),
       );
     }
+    await this.audit.record({
+      action: AuditAction.COMMENT_CREATE,
+      entityType: EntityType.COMMENT,
+      entityId: saved.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+      metadata: { ticketId, mentionedUserIds: mentioned.map((u) => u.id) },
+    });
     return this.toResponse(saved, mentioned);
   }
 
@@ -71,9 +88,13 @@ export class CommentsService {
    * timeout / deadlock is mapped to 409 ConflictException so the caller
    * knows to retry.
    */
-  async update(commentId: number, dto: UpdateCommentDto): Promise<CommentResponse> {
+  async update(
+    commentId: number,
+    dto: UpdateCommentDto,
+    actorUserId: number | null = null,
+  ): Promise<CommentResponse> {
     try {
-      return await this.dataSource.transaction(async (manager) => {
+      const response = await this.dataSource.transaction(async (manager) => {
         const comment = await manager
           .getRepository(Comment)
           .createQueryBuilder('c')
@@ -107,6 +128,14 @@ export class CommentsService {
         }
         return this.toResponse(comment, newMentions);
       });
+      await this.audit.record({
+        action: AuditAction.COMMENT_UPDATE,
+        entityType: EntityType.COMMENT,
+        entityId: commentId,
+        performedBy: actorUserId,
+        actor: ActorType.USER,
+      });
+      return response;
     } catch (err: any) {
       if (err instanceof NotFoundException) throw err;
       if (err?.code === '55P03' || err?.code === '40P01') {
@@ -116,10 +145,17 @@ export class CommentsService {
     }
   }
 
-  async delete(commentId: number): Promise<void> {
+  async delete(commentId: number, actorUserId: number | null = null): Promise<void> {
     const comment = await this.comments.findOne({ where: { id: commentId } });
     if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
     await this.comments.delete({ id: commentId });
+    await this.audit.record({
+      action: AuditAction.COMMENT_DELETE,
+      entityType: EntityType.COMMENT,
+      entityId: commentId,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
   }
 
   async findForTicket(ticketId: number): Promise<CommentResponse[]> {
@@ -158,7 +194,10 @@ export class CommentsService {
   }
 
   /** Cascade hook fired by TicketsService.softDelete (and project cascade). */
-  async cascadeHardDeleteComments(ticketIds: number[]): Promise<void> {
+  async cascadeHardDeleteComments(
+    ticketIds: number[],
+    actorUserId: number | null = null,
+  ): Promise<void> {
     if (ticketIds.length === 0) return;
     const ids = (
       await this.comments.find({ where: { ticketId: In(ticketIds) }, select: ['id'] })
@@ -167,6 +206,16 @@ export class CommentsService {
       await this.mentions.delete({ commentId: In(ids) });
     }
     await this.comments.delete({ ticketId: In(ticketIds) });
+    for (const commentId of ids) {
+      await this.audit.record({
+        action: AuditAction.COMMENT_DELETE,
+        entityType: EntityType.COMMENT,
+        entityId: commentId,
+        performedBy: actorUserId,
+        actor: ActorType.USER,
+        metadata: { cascade: true, ticketIds },
+      });
+    }
   }
 
   private async toResponseWithLookup(comment: Comment): Promise<CommentResponse> {

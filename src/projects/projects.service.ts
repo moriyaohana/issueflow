@@ -9,6 +9,10 @@ import { Project } from './entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UsersService } from '../users/users.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../common/enums/audit-action.enum';
+import { EntityType } from '../common/enums/entity-type.enum';
+import { ActorType } from '../common/enums/actor-type.enum';
 
 /**
  * Cascade hook contract: TicketsService (Agent 5) implements these and
@@ -16,8 +20,8 @@ import { UsersService } from '../users/users.service';
  * without a hard module dependency.
  */
 export interface ProjectCascadeHandler {
-  cascadeSoftDeleteForProject(projectId: number): Promise<void>;
-  cascadeRestoreForProject(projectId: number): Promise<void>;
+  cascadeSoftDeleteForProject(projectId: number, actorUserId: number | null): Promise<void>;
+  cascadeRestoreForProject(projectId: number, actorUserId: number | null): Promise<void>;
 }
 
 @Injectable()
@@ -27,13 +31,14 @@ export class ProjectsService {
   constructor(
     @InjectRepository(Project) private readonly projects: Repository<Project>,
     private readonly users: UsersService,
+    private readonly audit: AuditLogService,
   ) {}
 
   setCascadeHandler(handler: ProjectCascadeHandler): void {
     this.cascadeHandler = handler;
   }
 
-  async create(dto: CreateProjectDto): Promise<Project> {
+  async create(dto: CreateProjectDto, actorUserId: number | null = null): Promise<Project> {
     const ownerActive = await this.users.existsAndActive(dto.ownerId);
     if (!ownerActive) {
       // Distinguish "owner missing" (404) from "owner soft-deleted" (400).
@@ -50,7 +55,15 @@ export class ProjectsService {
       description: dto.description,
       ownerId: dto.ownerId,
     });
-    return this.projects.save(project);
+    const saved = await this.projects.save(project);
+    await this.audit.record({
+      action: AuditAction.PROJECT_CREATE,
+      entityType: EntityType.PROJECT,
+      entityId: saved.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
+    return saved;
   }
 
   findAll(): Promise<Project[]> {
@@ -72,22 +85,41 @@ export class ProjectsService {
     });
   }
 
-  async update(id: number, dto: UpdateProjectDto): Promise<Project> {
+  async update(
+    id: number,
+    dto: UpdateProjectDto,
+    actorUserId: number | null = null,
+  ): Promise<Project> {
     const project = await this.findOne(id);
     if (dto.name !== undefined) project.name = dto.name;
     if (dto.description !== undefined) project.description = dto.description;
-    return this.projects.save(project);
+    const saved = await this.projects.save(project);
+    await this.audit.record({
+      action: AuditAction.PROJECT_UPDATE,
+      entityType: EntityType.PROJECT,
+      entityId: saved.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
+    return saved;
   }
 
-  async softDelete(id: number): Promise<void> {
+  async softDelete(id: number, actorUserId: number | null = null): Promise<void> {
     const project = await this.findOne(id);
     await this.projects.softRemove(project);
+    await this.audit.record({
+      action: AuditAction.PROJECT_DELETE,
+      entityType: EntityType.PROJECT,
+      entityId: project.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
     if (this.cascadeHandler) {
-      await this.cascadeHandler.cascadeSoftDeleteForProject(project.id);
+      await this.cascadeHandler.cascadeSoftDeleteForProject(project.id, actorUserId);
     }
   }
 
-  async restore(id: number): Promise<Project> {
+  async restore(id: number, actorUserId: number | null = null): Promise<Project> {
     const project = await this.projects.findOne({
       where: { id },
       withDeleted: true,
@@ -97,8 +129,15 @@ export class ProjectsService {
       return project;
     }
     await this.projects.restore(id);
+    await this.audit.record({
+      action: AuditAction.PROJECT_RESTORE,
+      entityType: EntityType.PROJECT,
+      entityId: project.id,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
     if (this.cascadeHandler) {
-      await this.cascadeHandler.cascadeRestoreForProject(project.id);
+      await this.cascadeHandler.cascadeRestoreForProject(project.id, actorUserId);
     }
     return this.projects.findOne({ where: { id } }) as Promise<Project>;
   }

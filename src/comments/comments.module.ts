@@ -31,7 +31,8 @@ export class CommentsModule implements OnModuleInit {
   // comments when a ticket (or its parent project) is soft-deleted.
   onModuleInit(): void {
     this.tickets.registerCascadeTarget({
-      cascadeHardDeleteComments: (ids) => this.comments.cascadeHardDeleteComments(ids),
+      cascadeHardDeleteComments: (ids, actor) =>
+        this.comments.cascadeHardDeleteComments(ids, actor),
     });
   }
 }

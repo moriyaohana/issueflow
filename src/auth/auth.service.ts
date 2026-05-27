@@ -9,6 +9,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { InvalidatedTokensService } from './invalidated-tokens.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../common/enums/audit-action.enum';
+import { EntityType } from '../common/enums/entity-type.enum';
+import { ActorType } from '../common/enums/actor-type.enum';
 
 export interface LoginResult {
   accessToken: string;
@@ -23,6 +27,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly invalidated: InvalidatedTokensService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async login(dto: LoginDto): Promise<{ result: LoginResult; userId: number }> {
@@ -41,6 +46,13 @@ export class AuthService {
       { sub: user.id, username: user.username, role: user.role, jti },
       { expiresIn: expiresInSeconds },
     );
+    await this.audit.record({
+      action: AuditAction.LOGIN,
+      entityType: EntityType.USER,
+      entityId: user.id,
+      performedBy: user.id,
+      actor: ActorType.USER,
+    });
     return {
       result: {
         accessToken,
@@ -51,11 +63,18 @@ export class AuthService {
     };
   }
 
-  async logout(jti: string, expirySeconds?: number): Promise<void> {
+  async logout(jti: string, userId: number, expirySeconds?: number): Promise<void> {
     const expiresAt = expirySeconds
       ? new Date(expirySeconds * 1000)
       : new Date(Date.now() + 24 * 60 * 60 * 1000);
     await this.invalidated.add(jti, expiresAt);
+    await this.audit.record({
+      action: AuditAction.LOGOUT,
+      entityType: EntityType.USER,
+      entityId: userId,
+      performedBy: userId,
+      actor: ActorType.USER,
+    });
   }
 
   private toSeconds(value: string): number {

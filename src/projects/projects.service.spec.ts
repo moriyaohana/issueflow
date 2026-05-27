@@ -4,6 +4,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { Project } from './entities/project.entity';
 import { UsersService } from '../users/users.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 describe('ProjectsService', () => {
   let service: ProjectsService;
@@ -29,6 +30,7 @@ describe('ProjectsService', () => {
         ProjectsService,
         { provide: getRepositoryToken(Project), useValue: repo },
         { provide: UsersService, useValue: users },
+        { provide: AuditLogService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(ProjectsService);
@@ -70,7 +72,7 @@ describe('ProjectsService', () => {
     service.setCascadeHandler(handler);
     await service.softDelete(7);
     expect(repo.softRemove).toHaveBeenCalledWith(project);
-    expect(handler.cascadeSoftDeleteForProject).toHaveBeenCalledWith(7);
+    expect(handler.cascadeSoftDeleteForProject).toHaveBeenCalledWith(7, null);
   });
 
   it('restore re-enables visibility and triggers cascade restore', async () => {
@@ -85,7 +87,7 @@ describe('ProjectsService', () => {
     service.setCascadeHandler(handler);
     const restored = await service.restore(7);
     expect(repo.restore).toHaveBeenCalledWith(7);
-    expect(handler.cascadeRestoreForProject).toHaveBeenCalledWith(7);
+    expect(handler.cascadeRestoreForProject).toHaveBeenCalledWith(7, null);
     expect(restored).toBeTruthy();
   });
 

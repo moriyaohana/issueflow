@@ -19,13 +19,12 @@ import { Ticket } from './entities/ticket.entity';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
+import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
 @Controller('tickets')
 export class TicketsController {
   constructor(private readonly tickets: TicketsService) {}
 
-  // Static segments are declared before `:ticketId` so they are not shadowed
-  // (route order matters in Express).
   @Get('deleted')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -45,8 +44,11 @@ export class TicketsController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(@Body() dto: CreateTicketDto): Promise<Ticket> {
-    return this.tickets.create(dto);
+  create(
+    @Body() dto: CreateTicketDto,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<Ticket> {
+    return this.tickets.create(dto, actor?.id ?? null);
   }
 
   @Patch(':ticketId')
@@ -54,21 +56,28 @@ export class TicketsController {
   update(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @Body() dto: UpdateTicketDto,
+    @CurrentUser() actor: CurrentUserPayload,
   ): Promise<Ticket> {
-    return this.tickets.update(ticketId, dto);
+    return this.tickets.update(ticketId, dto, actor?.id ?? null);
   }
 
   @Delete(':ticketId')
   @HttpCode(HttpStatus.OK)
-  async delete(@Param('ticketId', ParseIntPipe) ticketId: number): Promise<void> {
-    await this.tickets.softDelete(ticketId);
+  async delete(
+    @Param('ticketId', ParseIntPipe) ticketId: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<void> {
+    await this.tickets.softDelete(ticketId, actor?.id ?? null);
   }
 
   @Post(':ticketId/restore')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  restore(@Param('ticketId', ParseIntPipe) ticketId: number): Promise<Ticket> {
-    return this.tickets.restore(ticketId);
+  restore(
+    @Param('ticketId', ParseIntPipe) ticketId: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<Ticket> {
+    return this.tickets.restore(ticketId, actor?.id ?? null);
   }
 }

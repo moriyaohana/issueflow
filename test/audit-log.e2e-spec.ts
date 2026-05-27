@@ -1,0 +1,121 @@
+import * as request from 'supertest';
+import { createTestApp, TestAppContext } from './test-app.factory';
+import { UserRole } from '../src/common/enums/user-role.enum';
+
+describe('Audit log (e2e)', () => {
+  let ctx: TestAppContext;
+  let adminToken: string;
+  let adminUserId: number;
+
+  beforeAll(async () => {
+    ctx = await createTestApp();
+    const admin = await ctx.obtainToken({ role: UserRole.ADMIN });
+    adminToken = admin.accessToken;
+    adminUserId = admin.userId;
+  });
+
+  afterAll(async () => {
+    await ctx.close();
+  });
+
+  it('records PROJECT_CREATE and TICKET_UPDATE with metadata.statusFrom/statusTo', async () => {
+    const project = await request(ctx.app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'p', description: 'd', ownerId: adminUserId })
+      .expect(200);
+
+    const projectAudit = await request(ctx.app.getHttpServer())
+      .get(`/audit-logs?entityType=PROJECT&entityId=${project.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(projectAudit.body.find((r: any) => r.action === 'PROJECT_CREATE')).toBeTruthy();
+
+    const ticket = await request(ctx.app.getHttpServer())
+      .post('/tickets')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 't',
+        description: 'd',
+        status: 'TODO',
+        priority: 'LOW',
+        type: 'BUG',
+        projectId: project.body.id,
+      })
+      .expect(200);
+
+    await request(ctx.app.getHttpServer())
+      .patch(`/tickets/${ticket.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ version: 1, status: 'IN_PROGRESS' })
+      .expect(200);
+
+    const ticketAudit = await request(ctx.app.getHttpServer())
+      .get(`/audit-logs?entityType=TICKET&entityId=${ticket.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const update = ticketAudit.body.find((r: any) => r.action === 'TICKET_UPDATE');
+    expect(update).toBeTruthy();
+    expect(update.metadata.statusFrom).toBe('TODO');
+    expect(update.metadata.statusTo).toBe('IN_PROGRESS');
+  });
+
+  it('cascading project delete writes TICKET_DELETE and COMMENT_DELETE rows with metadata.cascade', async () => {
+    const project = await request(ctx.app.getHttpServer())
+      .post('/projects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'c', description: 'd', ownerId: adminUserId })
+      .expect(200);
+    const ticket = await request(ctx.app.getHttpServer())
+      .post('/tickets')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        title: 't',
+        description: 'd',
+        status: 'TODO',
+        priority: 'LOW',
+        type: 'BUG',
+        projectId: project.body.id,
+      })
+      .expect(200);
+    await request(ctx.app.getHttpServer())
+      .post(`/tickets/${ticket.body.id}/comments`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ authorId: adminUserId, content: 'hi' })
+      .expect(200);
+
+    await request(ctx.app.getHttpServer())
+      .delete(`/projects/${project.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const ticketAudit = await request(ctx.app.getHttpServer())
+      .get(`/audit-logs?entityType=TICKET&entityId=${ticket.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const cascadeRow = ticketAudit.body.find(
+      (r: any) => r.action === 'TICKET_DELETE' && r.metadata?.cascade === true,
+    );
+    expect(cascadeRow).toBeTruthy();
+    expect(cascadeRow.metadata.projectId).toBe(project.body.id);
+
+    const commentAudit = await request(ctx.app.getHttpServer())
+      .get(`/audit-logs?entityType=COMMENT`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(
+      commentAudit.body.find(
+        (r: any) => r.action === 'COMMENT_DELETE' && r.metadata?.cascade === true,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('records LOGIN audit row', async () => {
+    const t = await ctx.obtainToken({ role: UserRole.DEVELOPER });
+    const audit = await request(ctx.app.getHttpServer())
+      .get(`/audit-logs?action=LOGIN&entityType=USER&entityId=${t.userId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(audit.body.find((r: any) => r.action === 'LOGIN')).toBeTruthy();
+  });
+});

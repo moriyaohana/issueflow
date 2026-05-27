@@ -18,12 +18,12 @@ import { Project } from './entities/project.entity';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
+import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
 @Controller('projects')
 export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
-  // Static route segments must precede `:projectId` so they aren't shadowed.
   @Get('deleted')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -43,8 +43,11 @@ export class ProjectsController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(@Body() dto: CreateProjectDto): Promise<Project> {
-    return this.projects.create(dto);
+  create(
+    @Body() dto: CreateProjectDto,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<Project> {
+    return this.projects.create(dto, actor?.id ?? null);
   }
 
   @Patch(':projectId')
@@ -52,21 +55,28 @@ export class ProjectsController {
   update(
     @Param('projectId', ParseIntPipe) projectId: number,
     @Body() dto: UpdateProjectDto,
+    @CurrentUser() actor: CurrentUserPayload,
   ): Promise<Project> {
-    return this.projects.update(projectId, dto);
+    return this.projects.update(projectId, dto, actor?.id ?? null);
   }
 
   @Delete(':projectId')
   @HttpCode(HttpStatus.OK)
-  async delete(@Param('projectId', ParseIntPipe) projectId: number): Promise<void> {
-    await this.projects.softDelete(projectId);
+  async delete(
+    @Param('projectId', ParseIntPipe) projectId: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<void> {
+    await this.projects.softDelete(projectId, actor?.id ?? null);
   }
 
   @Post(':projectId/restore')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  restore(@Param('projectId', ParseIntPipe) projectId: number): Promise<Project> {
-    return this.projects.restore(projectId);
+  restore(
+    @Param('projectId', ParseIntPipe) projectId: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<Project> {
+    return this.projects.restore(projectId, actor?.id ?? null);
   }
 }

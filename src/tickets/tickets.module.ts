@@ -22,8 +22,9 @@ export class TicketsModule implements OnModuleInit {
   // Wire the project → ticket cascade once both services are constructed.
   onModuleInit(): void {
     this.projects.setCascadeHandler({
-      cascadeSoftDeleteForProject: (id) => this.tickets.cascadeSoftDeleteForProject(id),
-      cascadeRestoreForProject: (id) => this.tickets.cascadeRestoreForProject(id),
+      cascadeSoftDeleteForProject: (id, actor) =>
+        this.tickets.cascadeSoftDeleteForProject(id, actor),
+      cascadeRestoreForProject: (id, actor) => this.tickets.cascadeRestoreForProject(id, actor),
     });
   }
 }

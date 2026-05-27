@@ -35,7 +35,7 @@ export class AuthController {
     if (!user?.jti) {
       throw new UnauthorizedException();
     }
-    await this.auth.logout(user.jti);
+    await this.auth.logout(user.jti, user.id);
     return { ok: true };
   }
 

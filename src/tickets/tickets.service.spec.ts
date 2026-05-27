@@ -13,6 +13,7 @@ import { UsersService } from '../users/users.service';
 import { TicketStatus } from '../common/enums/ticket-status.enum';
 import { TicketPriority } from '../common/enums/ticket-priority.enum';
 import { TicketType } from '../common/enums/ticket-type.enum';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 function makeTicket(over: Partial<Ticket> = {}): Ticket {
   return {
@@ -61,6 +62,7 @@ describe('TicketsService', () => {
         { provide: getRepositoryToken(Ticket), useValue: repo },
         { provide: ProjectsService, useValue: projects },
         { provide: UsersService, useValue: users },
+        { provide: AuditLogService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = moduleRef.get(TicketsService);
