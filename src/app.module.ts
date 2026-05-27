@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { buildTypeOrmOptions } from './config/typeorm.config';
 import { HealthController } from './health.controller';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { HealthController } from './health.controller';
       useFactory: (config: ConfigService) => buildTypeOrmOptions(config),
     }),
     ScheduleModule.forRoot(),
+    UsersModule,
   ],
   controllers: [HealthController],
   providers: [
