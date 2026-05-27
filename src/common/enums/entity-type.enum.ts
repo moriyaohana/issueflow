@@ -1,0 +1,8 @@
+export enum EntityType {
+  USER = 'USER',
+  PROJECT = 'PROJECT',
+  TICKET = 'TICKET',
+  COMMENT = 'COMMENT',
+  ATTACHMENT = 'ATTACHMENT',
+  DEPENDENCY = 'DEPENDENCY',
+}
