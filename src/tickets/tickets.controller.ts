@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,8 +11,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { Response } from 'express';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
@@ -20,16 +27,60 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
 import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import { TicketsExportService } from './import-export/tickets-export.service';
+import { TicketsImportService, ImportResult } from './import-export/tickets-import.service';
+
+const MAX_IMPORT_SIZE = 10 * 1024 * 1024;
 
 @Controller('tickets')
 export class TicketsController {
-  constructor(private readonly tickets: TicketsService) {}
+  constructor(
+    private readonly tickets: TicketsService,
+    private readonly exportSvc: TicketsExportService,
+    private readonly importSvc: TicketsImportService,
+  ) {}
 
+  // Static segments are declared before `:ticketId` so they aren't shadowed
+  // by Express's route trie (registration order matters here).
   @Get('deleted')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   listDeleted(@Query('projectId', ParseIntPipe) projectId: number): Promise<Ticket[]> {
     return this.tickets.findAllDeletedForProject(projectId);
+  }
+
+  @Get('export')
+  async export(
+    @Query('projectId', ParseIntPipe) projectId: number,
+    @CurrentUser() actor: CurrentUserPayload,
+    @Res() res: Response,
+  ): Promise<void> {
+    const csv = await this.exportSvc.export(projectId, actor?.id ?? null);
+    res
+      .status(HttpStatus.OK)
+      .header('Content-Type', 'text/csv')
+      .header('Content-Disposition', `attachment; filename="tickets-${projectId}.csv"`)
+      .send(csv);
+  }
+
+  @Post('import')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_IMPORT_SIZE },
+    }),
+  )
+  async import(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('projectId') projectIdRaw: string,
+    @CurrentUser() actor: CurrentUserPayload,
+  ): Promise<ImportResult> {
+    const projectId = parseInt(projectIdRaw, 10);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      throw new BadRequestException('projectId must be a positive integer');
+    }
+    return this.importSvc.import(projectId, file, actor?.id ?? null);
   }
 
   @Get()
