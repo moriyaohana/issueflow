@@ -15,9 +15,9 @@ export class CreateUsers1700000002000 implements MigrationInterface {
         "fullName" varchar(255) NOT NULL,
         "role" "users_role_enum" NOT NULL,
         "passwordHash" varchar(255) NOT NULL,
-        "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-        "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
-        "deletedAt" TIMESTAMP,
+        "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deletedAt" TIMESTAMP WITH TIME ZONE,
         CONSTRAINT "PK_users" PRIMARY KEY ("id")
       )
     `);

@@ -28,8 +28,11 @@ export class Attachment {
   @Column({ type: 'bytea' })
   data: Buffer;
 
-  @Column({ type: 'int' })
-  uploadedBy: number;
+  // Nullable to align with the `ON DELETE SET NULL` FK to `users.id`.
+  // In practice users are soft-deleted only, so this stays populated; the
+  // null path exists as a safety valve for a future hard-delete.
+  @Column({ type: 'int', nullable: true })
+  uploadedBy: number | null;
 
   @Column({ type: 'boolean', default: false })
   deletedByCascade: boolean;

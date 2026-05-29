@@ -27,7 +27,8 @@ export class CreateAuditLog1700000007000 implements MigrationInterface {
         "actor" "audit_logs_actor_enum" NOT NULL,
         "metadata" jsonb,
         "timestamp" TIMESTAMP NOT NULL DEFAULT now(),
-        CONSTRAINT "PK_audit_logs" PRIMARY KEY ("id")
+        CONSTRAINT "PK_audit_logs" PRIMARY KEY ("id"),
+        CONSTRAINT "FK_audit_logs_performedBy" FOREIGN KEY ("performedBy") REFERENCES "users"("id") ON DELETE SET NULL
       )
     `);
     await queryRunner.query(

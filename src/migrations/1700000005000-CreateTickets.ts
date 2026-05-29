@@ -31,7 +31,9 @@ export class CreateTickets1700000005000 implements MigrationInterface {
         "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
         "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
         "deletedAt" TIMESTAMP,
-        CONSTRAINT "PK_tickets" PRIMARY KEY ("id")
+        CONSTRAINT "PK_tickets" PRIMARY KEY ("id"),
+        CONSTRAINT "FK_tickets_projectId" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT,
+        CONSTRAINT "FK_tickets_assigneeId" FOREIGN KEY ("assigneeId") REFERENCES "users"("id") ON DELETE SET NULL
       )
     `);
     await queryRunner.query(`CREATE INDEX "IDX_tickets_projectId" ON "tickets" ("projectId")`);

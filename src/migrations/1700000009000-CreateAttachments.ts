@@ -12,9 +12,11 @@ export class CreateAttachments1700000009000 implements MigrationInterface {
         "contentType" varchar(100) NOT NULL,
         "sizeBytes" int NOT NULL,
         "data" bytea NOT NULL,
-        "uploadedBy" int NOT NULL,
+        "uploadedBy" int,
         "uploadedAt" TIMESTAMP NOT NULL DEFAULT now(),
-        CONSTRAINT "PK_attachments" PRIMARY KEY ("id")
+        CONSTRAINT "PK_attachments" PRIMARY KEY ("id"),
+        CONSTRAINT "FK_attachments_ticketId" FOREIGN KEY ("ticketId") REFERENCES "tickets"("id") ON DELETE RESTRICT,
+        CONSTRAINT "FK_attachments_uploadedBy" FOREIGN KEY ("uploadedBy") REFERENCES "users"("id") ON DELETE SET NULL
       )
     `);
     await queryRunner.query(`CREATE INDEX "IDX_attachments_ticketId" ON "attachments" ("ticketId")`);
