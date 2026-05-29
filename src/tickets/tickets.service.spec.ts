@@ -5,6 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  PreconditionFailedException,
 } from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 import { Ticket } from './entities/ticket.entity';
@@ -62,7 +63,10 @@ describe('TicketsService', () => {
         { provide: getRepositoryToken(Ticket), useValue: repo },
         { provide: ProjectsService, useValue: projects },
         { provide: UsersService, useValue: users },
-        { provide: AuditLogService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: AuditLogService,
+          useValue: { record: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
     service = moduleRef.get(TicketsService);
@@ -98,28 +102,54 @@ describe('TicketsService', () => {
   });
 
   it('update on DONE ticket → 403', async () => {
-    repo.findOne.mockResolvedValueOnce(makeTicket({ status: TicketStatus.DONE }));
-    await expect(service.update(1, { version: 1 })).rejects.toBeInstanceOf(ForbiddenException);
+    repo.findOne.mockResolvedValueOnce(
+      makeTicket({ status: TicketStatus.DONE }),
+    );
+    await expect(service.update(1, {}, null, 1)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
-  it('update with stale version → 409', async () => {
+  it('update with stale expectedVersion → 412', async () => {
     repo.findOne.mockResolvedValueOnce(makeTicket({ version: 3 }));
-    await expect(service.update(1, { version: 1 })).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.update(1, {}, null, 1)).rejects.toBeInstanceOf(
+      PreconditionFailedException,
+    );
   });
 
   it('forward-only status: rejects backward transition', async () => {
-    repo.findOne.mockResolvedValueOnce(makeTicket({ status: TicketStatus.IN_REVIEW }));
+    repo.findOne.mockResolvedValueOnce(
+      makeTicket({ status: TicketStatus.IN_REVIEW }),
+    );
     await expect(
-      service.update(1, { version: 1, status: TicketStatus.IN_PROGRESS }),
+      service.update(1, { status: TicketStatus.IN_PROGRESS }, null, 1),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('forward status + version bump on success', async () => {
     const ticket = makeTicket({ status: TicketStatus.TODO, version: 2 });
     repo.findOne.mockResolvedValueOnce(ticket);
-    const updated = await service.update(1, { version: 2, status: TicketStatus.IN_PROGRESS });
+    const updated = await service.update(
+      1,
+      { status: TicketStatus.IN_PROGRESS },
+      null,
+      2,
+    );
     expect(updated.status).toBe(TicketStatus.IN_PROGRESS);
     expect(updated.version).toBe(3);
+  });
+
+  it('update() bumps version across successive calls (1 → 2 → 3)', async () => {
+    const ticket = makeTicket({ version: 1 });
+    repo.findOne.mockResolvedValueOnce(ticket);
+    const first = await service.update(1, { title: 'first' }, null, 1);
+    expect(first.version).toBe(2);
+    expect(first.title).toBe('first');
+
+    repo.findOne.mockResolvedValueOnce(first);
+    const second = await service.update(1, { title: 'second' }, null, 2);
+    expect(second.version).toBe(3);
+    expect(second.title).toBe('second');
   });
 
   it('manual priority change pauses escalation and clears isOverdue', async () => {
@@ -129,7 +159,12 @@ describe('TicketsService', () => {
       isOverdue: true,
     });
     repo.findOne.mockResolvedValueOnce(ticket);
-    const updated = await service.update(1, { version: 1, priority: TicketPriority.HIGH });
+    const updated = await service.update(
+      1,
+      { priority: TicketPriority.HIGH },
+      null,
+      1,
+    );
     expect(updated.priority).toBe(TicketPriority.HIGH);
     expect(updated.autoEscalationPaused).toBe(true);
     expect(updated.isOverdue).toBe(false);
@@ -144,8 +179,15 @@ describe('TicketsService', () => {
         .mockRejectedValueOnce(new ConflictException('blocked')),
     });
     await expect(
-      service.update(1, { version: 1, status: TicketStatus.DONE }),
+      service.update(1, { status: TicketStatus.DONE }, null, 1),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('softDelete with stale expectedVersion → 412', async () => {
+    repo.findOne.mockResolvedValueOnce(makeTicket({ version: 4 }));
+    await expect(service.softDelete(1, null, 1)).rejects.toBeInstanceOf(
+      PreconditionFailedException,
+    );
   });
 
   it('cascade-soft-delete-for-project sets deletedByCascade=true and soft-removes', async () => {

@@ -26,13 +26,22 @@ import { Ticket } from './entities/ticket.entity';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
-import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../common/decorators/current-user.decorator';
+import { IfMatch } from '../common/decorators/if-match.decorator';
+import { ETagInterceptor } from '../common/interceptors/etag.interceptor';
 import { TicketsExportService } from './import-export/tickets-export.service';
-import { TicketsImportService, ImportResult } from './import-export/tickets-import.service';
+import {
+  TicketsImportService,
+  ImportResult,
+} from './import-export/tickets-import.service';
 
 const MAX_IMPORT_SIZE = 10 * 1024 * 1024;
 
 @Controller('tickets')
+@UseInterceptors(ETagInterceptor)
 export class TicketsController {
   constructor(
     private readonly tickets: TicketsService,
@@ -45,7 +54,9 @@ export class TicketsController {
   @Get('deleted')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  listDeleted(@Query('projectId', ParseIntPipe) projectId: number): Promise<Ticket[]> {
+  listDeleted(
+    @Query('projectId', ParseIntPipe) projectId: number,
+  ): Promise<Ticket[]> {
     return this.tickets.findAllDeletedForProject(projectId);
   }
 
@@ -59,7 +70,10 @@ export class TicketsController {
     res
       .status(HttpStatus.OK)
       .header('Content-Type', 'text/csv')
-      .header('Content-Disposition', `attachment; filename="tickets-${projectId}.csv"`)
+      .header(
+        'Content-Disposition',
+        `attachment; filename="tickets-${projectId}.csv"`,
+      )
       .send(csv);
   }
 
@@ -108,8 +122,14 @@ export class TicketsController {
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @Body() dto: UpdateTicketDto,
     @CurrentUser() actor: CurrentUserPayload,
+    @IfMatch() expectedVersion: number,
   ): Promise<Ticket> {
-    return this.tickets.update(ticketId, dto, actor?.id ?? null);
+    return this.tickets.update(
+      ticketId,
+      dto,
+      actor?.id ?? null,
+      expectedVersion,
+    );
   }
 
   @Delete(':ticketId')
@@ -117,8 +137,9 @@ export class TicketsController {
   async delete(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @CurrentUser() actor: CurrentUserPayload,
+    @IfMatch() expectedVersion: number,
   ): Promise<void> {
-    await this.tickets.softDelete(ticketId, actor?.id ?? null);
+    await this.tickets.softDelete(ticketId, actor?.id ?? null, expectedVersion);
   }
 
   @Post(':ticketId/restore')

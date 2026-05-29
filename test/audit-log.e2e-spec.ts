@@ -47,7 +47,8 @@ describe('Audit log (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${ticket.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ version: 1, status: 'IN_PROGRESS' })
+      .set('If-Match', ticket.headers.etag)
+      .send({ status: 'IN_PROGRESS' })
       .expect(200);
 
     const ticketAudit = await request(ctx.app.getHttpServer())

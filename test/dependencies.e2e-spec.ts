@@ -21,7 +21,7 @@ describe('Ticket Dependencies (e2e)', () => {
         projectId: p,
       })
       .expect(200);
-    return r.body;
+    return { ...r.body, etag: r.headers.etag as string };
   }
 
   beforeAll(async () => {
@@ -102,31 +102,36 @@ describe('Ticket Dependencies (e2e)', () => {
     const reviewing = await request(ctx.app.getHttpServer())
       .patch(`/tickets/${a.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ version: a.version, status: 'IN_REVIEW' })
+      .set('If-Match', a.etag)
+      .send({ status: 'IN_REVIEW' })
       .expect(200);
 
     // Blocker 'b' is still TODO; transitioning 'a' to DONE should be blocked.
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${a.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ version: reviewing.body.version, status: 'DONE' })
+      .set('If-Match', reviewing.headers.etag)
+      .send({ status: 'DONE' })
       .expect(409);
 
     // Move blocker through IN_REVIEW → DONE then 'a' should be allowed to DONE.
     const bUpdated1 = await request(ctx.app.getHttpServer())
       .patch(`/tickets/${b.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ version: b.version, status: 'IN_REVIEW' })
+      .set('If-Match', b.etag)
+      .send({ status: 'IN_REVIEW' })
       .expect(200);
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${b.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ version: bUpdated1.body.version, status: 'DONE' })
+      .set('If-Match', bUpdated1.headers.etag)
+      .send({ status: 'DONE' })
       .expect(200);
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${a.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ version: reviewing.body.version, status: 'DONE' })
+      .set('If-Match', reviewing.headers.etag)
+      .send({ status: 'DONE' })
       .expect(200);
   });
 
@@ -135,6 +140,7 @@ describe('Ticket Dependencies (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${a.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('If-Match', a.etag)
       .expect(200);
     const b = await makeTicket();
     await request(ctx.app.getHttpServer())

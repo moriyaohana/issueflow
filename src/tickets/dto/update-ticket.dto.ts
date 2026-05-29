@@ -37,7 +37,4 @@ export class UpdateTicketDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string;
-
-  @IsInt()
-  version: number;
 }

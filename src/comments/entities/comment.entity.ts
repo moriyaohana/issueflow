@@ -22,6 +22,9 @@ export class Comment {
   @Column({ type: 'text' })
   content: string;
 
+  @Column({ type: 'int', default: 1 })
+  version: number;
+
   @CreateDateColumn()
   createdAt: Date;
 

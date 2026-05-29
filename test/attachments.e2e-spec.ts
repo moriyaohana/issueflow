@@ -102,6 +102,7 @@ describe('Attachments (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${ticket.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('If-Match', ticket.headers.etag)
       .expect(200);
     const audit = await request(ctx.app.getHttpServer())
       .get(

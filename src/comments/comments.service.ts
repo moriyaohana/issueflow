@@ -1,8 +1,8 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   NotFoundException,
+  PreconditionFailedException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
@@ -25,6 +25,7 @@ export interface CommentResponse {
   authorId: number;
   content: string;
   mentionedUsers: { id: number; username: string; fullName: string }[];
+  version: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,10 +58,16 @@ export class CommentsService {
       throw new NotFoundException(`Ticket ${ticketId} not found`);
     }
     if (!(await this.users.existsAndActive(dto.authorId))) {
-      throw new BadRequestException(`Author ${dto.authorId} is missing or deleted`);
+      throw new BadRequestException(
+        `Author ${dto.authorId} is missing or deleted`,
+      );
     }
     const saved = await this.comments.save(
-      this.comments.create({ ticketId, authorId: dto.authorId, content: dto.content }),
+      this.comments.create({
+        ticketId,
+        authorId: dto.authorId,
+        content: dto.content,
+      }),
     );
     const mentioned = await this.mentionParser.resolve(dto.content);
     if (mentioned.length > 0) {
@@ -80,74 +87,83 @@ export class CommentsService {
   }
 
   /**
-   * Update with pessimistic write-lock on the comment row.
+   * Update with HTTP-level optimistic concurrency.
    *
-   * The lock guarantees that two concurrent edits cannot both succeed. We
-   * re-fetch under the lock, re-parse mentions, diff against existing rows,
-   * delete removed mentions, insert new ones, then commit. A pg lock-wait
-   * timeout / deadlock is mapped to 409 ConflictException so the caller
-   * knows to retry.
+   * The caller passes the version they observed (via `If-Match`); we compare
+   * against the row's current `version`, bump it on save, and surface a
+   * 412 Precondition Failed if they raced another writer. The mention diff
+   * + comment save stay inside a transaction so the row and its mentions
+   * commit atomically, but no row lock is taken — concurrent writers fail
+   * loud at the version check rather than serialising on a lock.
    */
   async update(
     commentId: number,
     dto: UpdateCommentDto,
-    actorUserId: number | null = null,
+    actorUserId: number | null,
+    expectedVersion: number,
   ): Promise<CommentResponse> {
-    try {
-      const response = await this.dataSource.transaction(async (manager) => {
-        const comment = await manager
-          .getRepository(Comment)
-          .createQueryBuilder('c')
-          .setLock('pessimistic_write')
-          .where('c.id = :id', { id: commentId })
-          .getOne();
-        if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
-
-        comment.content = dto.content;
-        await manager.getRepository(Comment).save(comment);
-
-        const newMentions = await this.mentionParser.resolve(dto.content);
-        const newUserIds = new Set(newMentions.map((u) => u.id));
-        const existing = await manager
-          .getRepository(Mention)
-          .find({ where: { commentId } });
-        const existingUserIds = new Set(existing.map((m) => m.userId));
-
-        const toDelete = existing.filter((m) => !newUserIds.has(m.userId));
-        const toAdd = [...newUserIds].filter((id) => !existingUserIds.has(id));
-
-        if (toDelete.length > 0) {
-          await manager.getRepository(Mention).delete({
-            id: In(toDelete.map((m) => m.id)),
-          });
-        }
-        if (toAdd.length > 0) {
-          await manager.getRepository(Mention).insert(
-            toAdd.map((userId) => ({ commentId, userId })),
-          );
-        }
-        return this.toResponse(comment, newMentions);
-      });
-      await this.audit.record({
-        action: AuditAction.COMMENT_UPDATE,
-        entityType: EntityType.COMMENT,
-        entityId: commentId,
-        performedBy: actorUserId,
-        actor: ActorType.USER,
-      });
-      return response;
-    } catch (err: any) {
-      if (err instanceof NotFoundException) throw err;
-      if (err?.code === '55P03' || err?.code === '40P01') {
-        throw new ConflictException('Comment is being edited; try again');
+    const response = await this.dataSource.transaction(async (manager) => {
+      const comment = await manager
+        .getRepository(Comment)
+        .findOne({ where: { id: commentId } });
+      if (!comment)
+        throw new NotFoundException(`Comment ${commentId} not found`);
+      if (expectedVersion !== comment.version) {
+        throw new PreconditionFailedException({
+          message: 'Version mismatch',
+          currentVersion: comment.version,
+        });
       }
-      throw err;
-    }
+
+      comment.content = dto.content;
+      comment.version += 1;
+      await manager.getRepository(Comment).save(comment);
+
+      const newMentions = await this.mentionParser.resolve(dto.content);
+      const newUserIds = new Set(newMentions.map((u) => u.id));
+      const existing = await manager
+        .getRepository(Mention)
+        .find({ where: { commentId } });
+      const existingUserIds = new Set(existing.map((m) => m.userId));
+
+      const toDelete = existing.filter((m) => !newUserIds.has(m.userId));
+      const toAdd = [...newUserIds].filter((id) => !existingUserIds.has(id));
+
+      if (toDelete.length > 0) {
+        await manager.getRepository(Mention).delete({
+          id: In(toDelete.map((m) => m.id)),
+        });
+      }
+      if (toAdd.length > 0) {
+        await manager
+          .getRepository(Mention)
+          .insert(toAdd.map((userId) => ({ commentId, userId })));
+      }
+      return this.toResponse(comment, newMentions);
+    });
+    await this.audit.record({
+      action: AuditAction.COMMENT_UPDATE,
+      entityType: EntityType.COMMENT,
+      entityId: commentId,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+    });
+    return response;
   }
 
-  async delete(commentId: number, actorUserId: number | null = null): Promise<void> {
+  async delete(
+    commentId: number,
+    actorUserId: number | null,
+    expectedVersion: number,
+  ): Promise<void> {
     const comment = await this.comments.findOne({ where: { id: commentId } });
     if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
+    if (expectedVersion !== comment.version) {
+      throw new PreconditionFailedException({
+        message: 'Version mismatch',
+        currentVersion: comment.version,
+      });
+    }
     await this.comments.delete({ id: commentId });
     await this.audit.record({
       action: AuditAction.COMMENT_DELETE,
@@ -189,7 +205,9 @@ export class CommentsService {
       where: { id: In(commentIds) },
       order: { createdAt: 'DESC' },
     });
-    const data = await Promise.all(comments.map((c) => this.toResponseWithLookup(c)));
+    const data = await Promise.all(
+      comments.map((c) => this.toResponseWithLookup(c)),
+    );
     return { data, total, page };
   }
 
@@ -200,7 +218,10 @@ export class CommentsService {
   ): Promise<void> {
     if (ticketIds.length === 0) return;
     const ids = (
-      await this.comments.find({ where: { ticketId: In(ticketIds) }, select: ['id'] })
+      await this.comments.find({
+        where: { ticketId: In(ticketIds) },
+        select: ['id'],
+      })
     ).map((c) => c.id);
     if (ids.length > 0) {
       await this.mentions.delete({ commentId: In(ids) });
@@ -218,14 +239,20 @@ export class CommentsService {
     }
   }
 
-  private async toResponseWithLookup(comment: Comment): Promise<CommentResponse> {
+  private async toResponseWithLookup(
+    comment: Comment,
+  ): Promise<CommentResponse> {
     const rows = await this.mentions.find({ where: { commentId: comment.id } });
     const ids = rows.map((r) => r.userId);
     if (ids.length === 0) return this.toResponse(comment, []);
     const users = await this.userRepo.find({ where: { id: In(ids) } });
     return this.toResponse(
       comment,
-      users.map((u) => ({ id: u.id, username: u.username, fullName: u.fullName })),
+      users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        fullName: u.fullName,
+      })),
     );
   }
 
@@ -243,6 +270,7 @@ export class CommentsService {
         username: u.username,
         fullName: u.fullName,
       })),
+      version: comment.version,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
     };

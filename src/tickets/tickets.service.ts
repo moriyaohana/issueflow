@@ -1,16 +1,19 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
+  PreconditionFailedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { Ticket } from './entities/ticket.entity';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
-import { TicketStatus, TICKET_STATUS_ORDER } from '../common/enums/ticket-status.enum';
+import {
+  TicketStatus,
+  TICKET_STATUS_ORDER,
+} from '../common/enums/ticket-status.enum';
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -19,9 +22,15 @@ import { EntityType } from '../common/enums/entity-type.enum';
 import { ActorType } from '../common/enums/actor-type.enum';
 
 export interface TicketCascadeTarget {
-  cascadeHardDeleteComments(ticketIds: number[], actorUserId: number | null): Promise<void>;
+  cascadeHardDeleteComments(
+    ticketIds: number[],
+    actorUserId: number | null,
+  ): Promise<void>;
   cascadeHardDeleteDependencies(ticketIds: number[]): Promise<void>;
-  cascadeHardDeleteAttachments(ticketIds: number[], actorUserId: number | null): Promise<void>;
+  cascadeHardDeleteAttachments(
+    ticketIds: number[],
+    actorUserId: number | null,
+  ): Promise<void>;
 }
 
 export interface BlockersResolver {
@@ -57,7 +66,10 @@ export class TicketsService {
     this.autoAssign = a;
   }
 
-  async create(dto: CreateTicketDto, actorUserId: number | null = null): Promise<Ticket> {
+  async create(
+    dto: CreateTicketDto,
+    actorUserId: number | null = null,
+  ): Promise<Ticket> {
     const projectActive = await this.projects.existsAndActive(dto.projectId);
     if (!projectActive) {
       throw new NotFoundException(`Project ${dto.projectId} not found`);
@@ -65,7 +77,9 @@ export class TicketsService {
     if (dto.assigneeId != null) {
       const ok = await this.users.existsAndActive(dto.assigneeId);
       if (!ok) {
-        throw new BadRequestException(`Assignee ${dto.assigneeId} is missing or deleted`);
+        throw new BadRequestException(
+          `Assignee ${dto.assigneeId} is missing or deleted`,
+        );
       }
     }
 
@@ -126,7 +140,9 @@ export class TicketsService {
   }
 
   async findOne(id: number): Promise<Ticket> {
-    const ticket = await this.tickets.findOne({ where: { id, deletedAt: IsNull() } });
+    const ticket = await this.tickets.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
     if (!ticket) throw new NotFoundException(`Ticket ${id} not found`);
     return ticket;
   }
@@ -135,26 +151,34 @@ export class TicketsService {
    * Update flow enforces, in order:
    *   1. ticket exists and is not soft-deleted (404)
    *   2. DONE tickets are immutable (403)
-   *   3. optimistic-locking version match (409)
+   *   3. optimistic-locking version match via If-Match header (412)
    *   4. forward-only status progression (400)
    *   5. blockers must be DONE before status → DONE (filled in Agent 8)
    *   6. user-supplied priority pauses auto-escalation and clears isOverdue
    *   7. version increments on every successful save
+   *
+   * `expectedVersion` is the integer parsed from the `If-Match` request
+   * header; the missing-header case is rejected at the decorator layer
+   * with 428 so this method only sees a number.
    */
   async update(
     id: number,
     dto: UpdateTicketDto,
-    actorUserId: number | null = null,
+    actorUserId: number | null,
+    expectedVersion: number,
   ): Promise<Ticket> {
-    const ticket = await this.tickets.findOne({ where: { id }, withDeleted: true });
+    const ticket = await this.tickets.findOne({
+      where: { id },
+      withDeleted: true,
+    });
     if (!ticket || ticket.deletedAt) {
       throw new NotFoundException(`Ticket ${id} not found`);
     }
     if (ticket.status === TicketStatus.DONE) {
       throw new ForbiddenException('Ticket is DONE and cannot be modified');
     }
-    if (dto.version !== ticket.version) {
-      throw new ConflictException({
+    if (expectedVersion !== ticket.version) {
+      throw new PreconditionFailedException({
         message: 'Version mismatch',
         currentVersion: ticket.version,
       });
@@ -178,7 +202,9 @@ export class TicketsService {
       if (dto.assigneeId !== null) {
         const ok = await this.users.existsAndActive(dto.assigneeId);
         if (!ok) {
-          throw new BadRequestException(`Assignee ${dto.assigneeId} is missing or deleted`);
+          throw new BadRequestException(
+            `Assignee ${dto.assigneeId} is missing or deleted`,
+          );
         }
       }
       ticket.assigneeId = dto.assigneeId;
@@ -217,8 +243,18 @@ export class TicketsService {
     return saved;
   }
 
-  async softDelete(id: number, actorUserId: number | null = null): Promise<void> {
+  async softDelete(
+    id: number,
+    actorUserId: number | null,
+    expectedVersion: number,
+  ): Promise<void> {
     const ticket = await this.findOne(id);
+    if (expectedVersion !== ticket.version) {
+      throw new PreconditionFailedException({
+        message: 'Version mismatch',
+        currentVersion: ticket.version,
+      });
+    }
     await this.runCascadeDeletes([ticket.id], actorUserId);
     await this.tickets.softRemove(ticket);
     await this.audit.record({
@@ -230,8 +266,14 @@ export class TicketsService {
     });
   }
 
-  async restore(id: number, actorUserId: number | null = null): Promise<Ticket> {
-    const ticket = await this.tickets.findOne({ where: { id }, withDeleted: true });
+  async restore(
+    id: number,
+    actorUserId: number | null = null,
+  ): Promise<Ticket> {
+    const ticket = await this.tickets.findOne({
+      where: { id },
+      withDeleted: true,
+    });
     if (!ticket) throw new NotFoundException(`Ticket ${id} not found`);
     if (!ticket.deletedAt) return ticket;
     await this.tickets.restore(id);
@@ -316,7 +358,9 @@ export class TicketsService {
   }
 
   async existsAndActive(id: number): Promise<boolean> {
-    const count = await this.tickets.count({ where: { id, deletedAt: IsNull() } });
+    const count = await this.tickets.count({
+      where: { id, deletedAt: IsNull() },
+    });
     return count > 0;
   }
 }

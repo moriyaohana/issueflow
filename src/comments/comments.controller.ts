@@ -9,13 +9,20 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  UseInterceptors,
 } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
-import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../common/decorators/current-user.decorator';
+import { IfMatch } from '../common/decorators/if-match.decorator';
+import { ETagInterceptor } from '../common/interceptors/etag.interceptor';
 
 @Controller('tickets/:ticketId/comments')
+@UseInterceptors(ETagInterceptor)
 export class CommentsController {
   constructor(private readonly comments: CommentsService) {}
 
@@ -41,8 +48,14 @@ export class CommentsController {
     @Param('commentId', ParseIntPipe) commentId: number,
     @Body() dto: UpdateCommentDto,
     @CurrentUser() actor: CurrentUserPayload,
+    @IfMatch() expectedVersion: number,
   ) {
-    return this.comments.update(commentId, dto, actor?.id ?? null);
+    return this.comments.update(
+      commentId,
+      dto,
+      actor?.id ?? null,
+      expectedVersion,
+    );
   }
 
   @Delete(':commentId')
@@ -51,7 +64,8 @@ export class CommentsController {
     @Param('ticketId', ParseIntPipe) _ticketId: number,
     @Param('commentId', ParseIntPipe) commentId: number,
     @CurrentUser() actor: CurrentUserPayload,
+    @IfMatch() expectedVersion: number,
   ): Promise<void> {
-    await this.comments.delete(commentId, actor?.id ?? null);
+    await this.comments.delete(commentId, actor?.id ?? null, expectedVersion);
   }
 }
