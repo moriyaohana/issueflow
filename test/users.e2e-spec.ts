@@ -1,4 +1,5 @@
 import * as request from 'supertest';
+import { HttpStatus } from '@nestjs/common';
 import { createTestApp, TestAppContext } from './test-app.factory';
 import { UserRole } from '../src/common/enums/user-role.enum';
 
@@ -27,7 +28,7 @@ describe('Users (e2e)', () => {
         role: 'DEVELOPER',
         password: 'secret-pw-12345',
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     expect(create.body).toMatchObject({
       username: 'jdoe',
@@ -42,7 +43,7 @@ describe('Users (e2e)', () => {
     const fetched = await request(ctx.app.getHttpServer())
       .get(`/users/${userId}`)
       .set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(fetched.body.id).toBe(userId);
     expect(fetched.body).not.toHaveProperty('passwordHash');
 
@@ -50,29 +51,29 @@ describe('Users (e2e)', () => {
       .post(`/users/update/${userId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ fullName: 'Jane Doe', role: 'ADMIN' })
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     const updated = await request(ctx.app.getHttpServer())
       .get(`/users/${userId}`)
       .set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(updated.body.fullName).toBe('Jane Doe');
     expect(updated.body.role).toBe('ADMIN');
 
     await request(ctx.app.getHttpServer())
       .delete(`/users/${userId}`)
       .set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     await request(ctx.app.getHttpServer())
       .get(`/users/${userId}`)
       .set('Authorization', `Bearer ${token}`)
-      .expect(404);
+      .expect(HttpStatus.NOT_FOUND);
 
     const list = await request(ctx.app.getHttpServer())
       .get('/users')
       .set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(list.body.find((u: any) => u.id === userId)).toBeUndefined();
   });
 
@@ -87,7 +88,7 @@ describe('Users (e2e)', () => {
         role: 'DEVELOPER',
         password: 'secret-pw-12345',
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     await request(ctx.app.getHttpServer())
       .post('/users')
@@ -99,7 +100,7 @@ describe('Users (e2e)', () => {
         role: 'DEVELOPER',
         password: 'secret-pw-12345',
       })
-      .expect(409);
+      .expect(HttpStatus.CONFLICT);
   });
 
   it('rejects invalid create payloads with 400', async () => {
@@ -113,7 +114,7 @@ describe('Users (e2e)', () => {
         role: 'DEVELOPER',
         password: 'secret-pw-12345',
       })
-      .expect(400);
+      .expect(HttpStatus.BAD_REQUEST);
 
     await request(ctx.app.getHttpServer())
       .post('/users')
@@ -125,10 +126,12 @@ describe('Users (e2e)', () => {
         role: 'DEVELOPER',
         password: '',
       })
-      .expect(400);
+      .expect(HttpStatus.BAD_REQUEST);
   });
 
   it('rejects unauthenticated requests with 401', async () => {
-    await request(ctx.app.getHttpServer()).get('/users').expect(401);
+    await request(ctx.app.getHttpServer())
+      .get('/users')
+      .expect(HttpStatus.UNAUTHORIZED);
   });
 });

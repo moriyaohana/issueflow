@@ -18,7 +18,7 @@ describe('Attachments (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'p', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const ticket = await request(ctx.app.getHttpServer())
       .post('/tickets')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -30,7 +30,7 @@ describe('Attachments (e2e)', () => {
         type: 'BUG',
         projectId: project.body.id,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     ticketId = ticket.body.id;
   });
 
@@ -46,7 +46,7 @@ describe('Attachments (e2e)', () => {
         filename: 'screenshot.png',
         contentType: 'image/png',
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(upload.body).toEqual({
       id: expect.any(Number),
       ticketId,
@@ -58,12 +58,12 @@ describe('Attachments (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${ticketId}/attachments/${upload.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${ticketId}/attachments/${upload.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(404);
+      .expect(HttpStatus.NOT_FOUND);
   });
 
   it('rejects an executable mime type with 400', async () => {
@@ -74,7 +74,7 @@ describe('Attachments (e2e)', () => {
         filename: 'bad.exe',
         contentType: 'application/x-msdownload',
       })
-      .expect(400);
+      .expect(HttpStatus.BAD_REQUEST);
   });
 
   it('upload with no file returns 400', async () => {
@@ -89,7 +89,7 @@ describe('Attachments (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'pp', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const ticket = await request(ctx.app.getHttpServer())
       .post('/tickets')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -101,7 +101,7 @@ describe('Attachments (e2e)', () => {
         type: 'BUG',
         projectId: project.body.id,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const upload = await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticket.body.id}/attachments`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -109,18 +109,18 @@ describe('Attachments (e2e)', () => {
         filename: 'a.txt',
         contentType: 'text/plain',
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${ticket.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', ticket.headers.etag)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const audit = await request(ctx.app.getHttpServer())
       .get(
         `/audit-logs?entityType=ATTACHMENT&entityId=${upload.body.id}&action=ATTACHMENT_DELETE`,
       )
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(
       audit.body.find((r: any) => r.metadata?.cascade === 'soft'),
     ).toBeTruthy();

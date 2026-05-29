@@ -19,13 +19,13 @@ describe('Tickets Export/Import (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'A', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     projectId = p.body.id;
     const p2 = await request(ctx.app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'B', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     projectIdB = p2.body.id;
 
     await request(ctx.app.getHttpServer())
@@ -39,7 +39,7 @@ describe('Tickets Export/Import (e2e)', () => {
         type: 'BUG',
         projectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .post('/tickets')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -51,7 +51,7 @@ describe('Tickets Export/Import (e2e)', () => {
         type: 'FEATURE',
         projectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
   });
 
   afterAll(async () => {
@@ -62,7 +62,7 @@ describe('Tickets Export/Import (e2e)', () => {
     const res = await request(ctx.app.getHttpServer())
       .get(`/tickets/export?projectId=${projectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200)
+      .expect(HttpStatus.OK)
       .expect('Content-Type', /text\/csv/);
     const body = res.text;
     expect(body.split('\n')[0]).toContain('id');
@@ -74,7 +74,7 @@ describe('Tickets Export/Import (e2e)', () => {
     const exp = await request(ctx.app.getHttpServer())
       .get(`/tickets/export?projectId=${projectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     const imp = await request(ctx.app.getHttpServer())
       .post('/tickets/import')
@@ -84,14 +84,14 @@ describe('Tickets Export/Import (e2e)', () => {
         filename: 'tickets.csv',
         contentType: 'text/csv',
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(imp.body.created).toBe(2);
     expect(imp.body.failed).toBe(0);
 
     const listed = await request(ctx.app.getHttpServer())
       .get(`/tickets?projectId=${projectIdB}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(listed.body.length).toBe(2);
   });
 
@@ -120,11 +120,11 @@ describe('Tickets Export/Import (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'gone', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .delete(`/projects/${p.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const csv = 'title,description,status,priority,type\nx,d,TODO,LOW,BUG\n';
     await request(ctx.app.getHttpServer())
       .post('/tickets/import')
@@ -134,6 +134,6 @@ describe('Tickets Export/Import (e2e)', () => {
         filename: 'in.csv',
         contentType: 'text/csv',
       })
-      .expect(404);
+      .expect(HttpStatus.NOT_FOUND);
   });
 });

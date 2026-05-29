@@ -1,4 +1,5 @@
 import * as request from 'supertest';
+import { HttpStatus } from '@nestjs/common';
 import { createTestApp, TestAppContext } from './test-app.factory';
 import { UserRole } from '../src/common/enums/user-role.enum';
 
@@ -29,7 +30,7 @@ describe('Auto-assign + Workload (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'p', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     projectId = p.body.id;
   });
 
@@ -49,7 +50,7 @@ describe('Auto-assign + Workload (e2e)', () => {
         type: 'BUG',
         projectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(ticket.body.assigneeId).toBe(dev1.id);
   });
 
@@ -65,7 +66,7 @@ describe('Auto-assign + Workload (e2e)', () => {
         type: 'BUG',
         projectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     // dev2 was created after dev1, dev1 already has one ticket so dev2 wins.
     expect(ticket.body.assigneeId).toBe(dev2.id);
   });
@@ -74,7 +75,7 @@ describe('Auto-assign + Workload (e2e)', () => {
     const wl = await request(ctx.app.getHttpServer())
       .get(`/projects/${projectId}/workload`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const counts = wl.body.map((e: any) => e.openTicketCount);
     for (let i = 1; i < counts.length; i++) {
       expect(counts[i]).toBeGreaterThanOrEqual(counts[i - 1]);
@@ -86,11 +87,11 @@ describe('Auto-assign + Workload (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/users/${dev3.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const wl = await request(ctx.app.getHttpServer())
       .get(`/projects/${projectId}/workload`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(wl.body.find((e: any) => e.userId === dev3.id)).toBeUndefined();
   });
 
@@ -98,7 +99,7 @@ describe('Auto-assign + Workload (e2e)', () => {
     const audit = await request(ctx.app.getHttpServer())
       .get('/audit-logs?action=AUTO_ASSIGN&actor=SYSTEM&entityType=TICKET')
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(audit.body.length).toBeGreaterThan(0);
     expect(audit.body[0].performedBy).toBeNull();
   });

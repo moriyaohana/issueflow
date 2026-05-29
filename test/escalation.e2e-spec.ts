@@ -19,7 +19,7 @@ describe('Auto-escalation (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'p', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     projectId = p.body.id;
   });
 
@@ -41,14 +41,14 @@ describe('Auto-escalation (e2e)', () => {
         projectId,
         dueDate: due,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     await ctx.app.get(EscalationService).runEscalation();
 
     const after = await request(ctx.app.getHttpServer())
       .get(`/tickets/${created.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(after.body.priority).toBe('MEDIUM');
     expect(after.headers.etag).toBe('W/"2"');
   });
@@ -119,13 +119,13 @@ describe('Auto-escalation (e2e)', () => {
         projectId,
         dueDate: due,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     await ctx.app.get(EscalationService).runEscalation();
     const after1 = await request(ctx.app.getHttpServer())
       .get(`/tickets/${created.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(after1.body.priority).toBe('CRITICAL');
     expect(after1.body.isOverdue).toBe(true);
     expect(after1.headers.etag).toBe('W/"2"');
@@ -134,7 +134,7 @@ describe('Auto-escalation (e2e)', () => {
     const after2 = await request(ctx.app.getHttpServer())
       .get(`/tickets/${created.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(after2.headers.etag).toBe('W/"2"');
   });
 });

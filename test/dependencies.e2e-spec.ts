@@ -21,7 +21,7 @@ describe('Ticket Dependencies (e2e)', () => {
         type: 'BUG',
         projectId: p,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     return { ...r.body, etag: r.headers.etag as string };
   }
 
@@ -34,7 +34,7 @@ describe('Ticket Dependencies (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'p', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     projectId = p.body.id;
   });
 
@@ -49,20 +49,20 @@ describe('Ticket Dependencies (e2e)', () => {
       .post(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ blockedBy: b.id })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const list = await request(ctx.app.getHttpServer())
       .get(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(list.body.find((d: any) => d.id === b.id)).toBeTruthy();
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${a.id}/dependencies/${b.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const list2 = await request(ctx.app.getHttpServer())
       .get(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(list2.body).toEqual([]);
   });
 
@@ -74,30 +74,30 @@ describe('Ticket Dependencies (e2e)', () => {
       .post(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ blockedBy: a.id })
-      .expect(400);
+      .expect(HttpStatus.BAD_REQUEST);
 
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ blockedBy: b.id })
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ blockedBy: b.id })
-      .expect(409);
+      .expect(HttpStatus.CONFLICT);
 
     const otherProject = await request(ctx.app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'other', description: 'x', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const c = await makeTicket(otherProject.body.id);
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ blockedBy: c.id })
-      .expect(400);
+      .expect(HttpStatus.BAD_REQUEST);
 
     // Move ticket 'a' to IN_REVIEW so we can attempt DONE transition.
     const reviewing = await request(ctx.app.getHttpServer())
@@ -105,7 +105,7 @@ describe('Ticket Dependencies (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', a.etag)
       .send({ status: 'IN_REVIEW' })
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     // Blocker 'b' is still TODO; transitioning 'a' to DONE should be blocked.
     await request(ctx.app.getHttpServer())
@@ -113,7 +113,7 @@ describe('Ticket Dependencies (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', reviewing.headers.etag)
       .send({ status: 'DONE' })
-      .expect(409);
+      .expect(HttpStatus.CONFLICT);
 
     // Move blocker through IN_REVIEW → DONE then 'a' should be allowed to DONE.
     const bUpdated1 = await request(ctx.app.getHttpServer())
@@ -121,19 +121,19 @@ describe('Ticket Dependencies (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', b.etag)
       .send({ status: 'IN_REVIEW' })
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${b.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', bUpdated1.headers.etag)
       .send({ status: 'DONE' })
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${a.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', reviewing.headers.etag)
       .send({ status: 'DONE' })
-      .expect(200);
+      .expect(HttpStatus.OK);
   });
 
   it('soft-deleting a ticket writes a DEPENDENCY_DELETE audit row per cascaded dependency', async () => {
@@ -172,12 +172,12 @@ describe('Ticket Dependencies (e2e)', () => {
       .delete(`/tickets/${a.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', a.etag)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const b = await makeTicket();
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${a.id}/dependencies`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ blockedBy: b.id })
-      .expect(404);
+      .expect(HttpStatus.NOT_FOUND);
   });
 });

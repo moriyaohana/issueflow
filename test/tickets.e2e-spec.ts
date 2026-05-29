@@ -18,7 +18,7 @@ describe('Tickets (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'P', description: 'D', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     projectId = project.body.id;
   });
 
@@ -142,8 +142,10 @@ describe('Tickets (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/users/${orphan.userId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    await createTicket({ assigneeId: orphan.userId }).expect(400);
+      .expect(HttpStatus.OK);
+    await createTicket({ assigneeId: orphan.userId }).expect(
+      HttpStatus.BAD_REQUEST,
+    );
   });
 
   it('soft-delete → list-deleted → restore lifecycle', async () => {
@@ -159,24 +161,24 @@ describe('Tickets (e2e)', () => {
     const liveList = await request(ctx.app.getHttpServer())
       .get(`/tickets?projectId=${projectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(liveList.body.find((t: any) => t.id === id)).toBeUndefined();
 
     const deleted = await request(ctx.app.getHttpServer())
       .get(`/tickets/deleted?projectId=${projectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(deleted.body.find((t: any) => t.id === id)).toBeTruthy();
 
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${id}/restore`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     const live2 = await request(ctx.app.getHttpServer())
       .get(`/tickets?projectId=${projectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(live2.body.find((t: any) => t.id === id)).toBeTruthy();
   });
 
@@ -201,7 +203,7 @@ describe('Tickets (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'cascade', description: 'd', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const cascadeProjectId = pj.body.id;
 
     const t1 = await request(ctx.app.getHttpServer())
@@ -215,7 +217,7 @@ describe('Tickets (e2e)', () => {
         type: 'BUG',
         projectId: cascadeProjectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const t2 = await request(ctx.app.getHttpServer())
       .post('/tickets')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -227,17 +229,17 @@ describe('Tickets (e2e)', () => {
         type: 'BUG',
         projectId: cascadeProjectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     await request(ctx.app.getHttpServer())
       .delete(`/projects/${cascadeProjectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     const deletedList = await request(ctx.app.getHttpServer())
       .get(`/tickets/deleted?projectId=${cascadeProjectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const items = deletedList.body.filter((t: any) =>
       [t1.body.id, t2.body.id].includes(t.id),
     );
@@ -247,12 +249,12 @@ describe('Tickets (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .post(`/projects/${cascadeProjectId}/restore`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     const liveList = await request(ctx.app.getHttpServer())
       .get(`/tickets?projectId=${cascadeProjectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(
       liveList.body.filter((t: any) => [t1.body.id, t2.body.id].includes(t.id))
         .length,

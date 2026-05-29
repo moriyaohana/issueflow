@@ -39,7 +39,7 @@ describe('Comments + Mentions (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'P', description: 'D', ownerId: adminUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     projectId = project.body.id;
     const ticket = await request(ctx.app.getHttpServer())
       .post('/tickets')
@@ -52,7 +52,7 @@ describe('Comments + Mentions (e2e)', () => {
         type: 'BUG',
         projectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     ticketId = ticket.body.id;
   });
 
@@ -88,7 +88,7 @@ describe('Comments + Mentions (e2e)', () => {
     const aliceMentions = await request(ctx.app.getHttpServer())
       .get(`/users/${alice.id}/mentions`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(
       aliceMentions.body.data.find((c: any) => c.id === commentId),
     ).toBeUndefined();
@@ -96,7 +96,7 @@ describe('Comments + Mentions (e2e)', () => {
     const carolMentions = await request(ctx.app.getHttpServer())
       .get(`/users/${carol.id}/mentions`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(
       carolMentions.body.data.find((c: any) => c.id === commentId),
     ).toBeTruthy();
@@ -107,7 +107,7 @@ describe('Comments + Mentions (e2e)', () => {
       .post(`/tickets/${ticketId}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ authorId: adminUserId, content: 'hi @ghost' })
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(create.body.mentionedUsers).toEqual([]);
   });
 
@@ -119,12 +119,12 @@ describe('Comments + Mentions (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/users/${tmp.userId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const create = await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticketId}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ authorId: adminUserId, content: 'hi @dave' })
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(create.body.mentionedUsers).toEqual([]);
   });
 
@@ -190,7 +190,7 @@ describe('Comments + Mentions (e2e)', () => {
       .post(`/tickets/${ticketId}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ authorId: adminUserId, content: 'shoutout @ALICE' })
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(create.body.mentionedUsers.map((u: any) => u.username)).toEqual([
       'alice',
     ]);
@@ -208,7 +208,7 @@ describe('Comments + Mentions (e2e)', () => {
         type: 'BUG',
         projectId,
       })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const tid = tk.body.id;
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${tid}/comments`)
@@ -223,15 +223,15 @@ describe('Comments + Mentions (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .get(`/tickets/${tid}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(404);
+      .expect(HttpStatus.NOT_FOUND);
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${tid}/restore`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     const list = await request(ctx.app.getHttpServer())
       .get(`/tickets/${tid}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(list.body).toHaveLength(1);
     expect(list.body[0].content).toBe('sticky @alice');
   });
@@ -244,20 +244,11 @@ describe('Comments + Mentions (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/users/${ghost.userId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticketId}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ authorId: ghost.userId, content: 'hello' })
-      .expect(400);
-  });
-
-  // Reference bob in something to prevent unused-variable warnings.
-  it('bob has zero mentions after cleanup', async () => {
-    const mentions = await request(ctx.app.getHttpServer())
-      .get(`/users/${bob.id}/mentions`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
-    expect(Array.isArray(mentions.body.data)).toBe(true);
+      .expect(HttpStatus.BAD_REQUEST);
   });
 });

@@ -17,7 +17,7 @@ describe('Auth (e2e)', () => {
   });
 
   it('protected route returns 401 without a token', async () => {
-    await request(ctx.app.getHttpServer()).get('/auth/me').expect(401);
+    await request(ctx.app.getHttpServer()).get('/auth/me').expect(HttpStatus.UNAUTHORIZED);
   });
 
   it('login → /auth/me returns the user', async () => {
@@ -25,7 +25,7 @@ describe('Auth (e2e)', () => {
     const me = await request(ctx.app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', `Bearer ${t.accessToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(me.body.id).toBe(t.userId);
     expect(me.body).not.toHaveProperty('passwordHash');
   });
@@ -35,11 +35,11 @@ describe('Auth (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .post('/auth/logout')
       .set('Authorization', `Bearer ${t.accessToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', `Bearer ${t.accessToken}`)
-      .expect(401);
+      .expect(HttpStatus.UNAUTHORIZED);
   });
 
   it('logout invalidates the exact-jti token until its real expiry', async () => {
@@ -76,7 +76,7 @@ describe('Auth (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', `Bearer ${t.accessToken}`)
-      .expect(401);
+      .expect(HttpStatus.UNAUTHORIZED);
   });
 
   it('login with wrong password returns 401', async () => {
@@ -92,6 +92,6 @@ describe('Auth (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .post('/auth/login')
       .send({ username: adminUsername, password: 'wrong-password' })
-      .expect(401);
+      .expect(HttpStatus.UNAUTHORIZED);
   });
 });

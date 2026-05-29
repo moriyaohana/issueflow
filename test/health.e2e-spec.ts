@@ -1,4 +1,5 @@
 import * as request from 'supertest';
+import { HttpStatus } from '@nestjs/common';
 import { createTestApp, TestAppContext } from './test-app.factory';
 
 describe('Health (e2e)', () => {
@@ -13,7 +14,7 @@ describe('Health (e2e)', () => {
   });
 
   it('GET / responds 200 with status ok', async () => {
-    const res = await request(ctx.app.getHttpServer()).get('/').expect(200);
+    const res = await request(ctx.app.getHttpServer()).get('/').expect(HttpStatus.OK);
     expect(res.body).toEqual({ status: 'ok' });
   });
 });

@@ -1,4 +1,5 @@
 import * as request from 'supertest';
+import { HttpStatus } from '@nestjs/common';
 import { createTestApp, TestAppContext } from './test-app.factory';
 import { UserRole } from '../src/common/enums/user-role.enum';
 
@@ -26,41 +27,41 @@ describe('Projects (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'Sample', description: 'desc', ownerId: ownerUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     const projectId = create.body.id;
 
     const list1 = await request(ctx.app.getHttpServer())
       .get('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(list1.body.find((p: any) => p.id === projectId)).toBeTruthy();
 
     await request(ctx.app.getHttpServer())
       .delete(`/projects/${projectId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     const list2 = await request(ctx.app.getHttpServer())
       .get('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(list2.body.find((p: any) => p.id === projectId)).toBeUndefined();
 
     const deletedList = await request(ctx.app.getHttpServer())
       .get('/projects/deleted')
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(deletedList.body.find((p: any) => p.id === projectId)).toBeTruthy();
 
     await request(ctx.app.getHttpServer())
       .post(`/projects/${projectId}/restore`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     const list3 = await request(ctx.app.getHttpServer())
       .get('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     expect(list3.body.find((p: any) => p.id === projectId)).toBeTruthy();
   });
 
@@ -68,22 +69,22 @@ describe('Projects (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .get('/projects/deleted')
       .set('Authorization', `Bearer ${devToken}`)
-      .expect(403);
+      .expect(HttpStatus.FORBIDDEN);
 
     const c = await request(ctx.app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'r', description: 'd', ownerId: ownerUserId })
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .delete(`/projects/${c.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
 
     await request(ctx.app.getHttpServer())
       .post(`/projects/${c.body.id}/restore`)
       .set('Authorization', `Bearer ${devToken}`)
-      .expect(403);
+      .expect(HttpStatus.FORBIDDEN);
   });
 
   it('rejects creating a project with a soft-deleted owner', async () => {
@@ -91,18 +92,18 @@ describe('Projects (e2e)', () => {
     await request(ctx.app.getHttpServer())
       .delete(`/users/${orphan.userId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'orphan', description: 'd', ownerId: orphan.userId })
-      .expect(400);
+      .expect(HttpStatus.BAD_REQUEST);
   });
 
   it('GET /projects/deleted route resolves before GET /projects/:id', async () => {
     await request(ctx.app.getHttpServer())
       .get('/projects/deleted')
       .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200);
+      .expect(HttpStatus.OK);
   });
 });
