@@ -68,11 +68,8 @@ export interface BlockersResolver {
 }
 
 export interface AutoAssignResolver {
-  /**
-   * Pick a developer for the given project. The caller MAY hand in a
-   * transactional `EntityManager` so the workload query joins the same
-   * snapshot the ticket insert is about to commit against.
-   */
+  // Optional manager so the workload query joins the same transaction
+  // snapshot as the upcoming ticket insert.
   pickAssignee(
     projectId: number,
     manager?: EntityManager,
@@ -109,26 +106,13 @@ export class TicketsService {
     dto: CreateTicketDto,
     actorUserId: number | null = null,
   ): Promise<Ticket> {
-    const projectActive = await this.projects.existsAndActive(dto.projectId);
-    if (!projectActive) {
-      throw new NotFoundException(
-        entityNotFound(EntityType.PROJECT, dto.projectId),
-      );
-    }
+    await this.projects.assertActive(dto.projectId);
     if (dto.assigneeId != null) {
-      const ok = await this.users.existsAndActive(dto.assigneeId);
-      if (!ok) {
-        throw new BadRequestException(
-          `Assignee ${dto.assigneeId} is missing or deleted`,
-        );
-      }
+      await this.users.assertActive(dto.assigneeId);
     }
 
-    // Insert ticket + (optional) auto-assign + audit rows in one transaction.
-    // Auto-assign is performed inside the same `EntityManager` so two
-    // concurrent POSTs cannot both pick the same developer: the
-    // `pickAssignee` query reads the live ticket counts under the same
-    // serialisable/lock visibility as the insert about to land.
+    // Auto-assign runs inside the same TX as the insert so concurrent POSTs
+    // can't both pick the same developer.
     return this.dataSource.transaction(async (manager) => {
       let assigneeId = dto.assigneeId ?? null;
       let autoAssigned = false;
@@ -162,9 +146,6 @@ export class TicketsService {
         },
       ];
       if (autoAssigned && assigneeId != null) {
-        // Auto-assignment is a system-driven decision triggered as a
-        // side-effect of the user's CREATE. Audit it separately so reports
-        // can filter on actor=SYSTEM.
         auditRows.push({
           action: AuditAction.AUTO_ASSIGN,
           entityType: EntityType.TICKET,
@@ -179,19 +160,12 @@ export class TicketsService {
   }
 
   async findAllForProject(projectId: number): Promise<Ticket[]> {
-    const active = await this.projects.existsAndActive(projectId);
-    if (!active) {
-      throw new NotFoundException(
-        entityNotFound(EntityType.PROJECT, projectId),
-      );
-    }
+    await this.projects.assertActive(projectId);
     return this.tickets.find({ where: { projectId, deletedAt: IsNull() } });
   }
 
   async findAllDeletedForProject(projectId: number): Promise<Ticket[]> {
-    // Forensics endpoint: allow listing the deleted tickets of a soft-deleted
-    // project (so the cascade can be inspected), but still reject totally
-    // unknown projects.
+    // Allow forensics on the deleted tickets of a soft-deleted project.
     const exists = await this.projects.existsIncludingDeleted(projectId);
     if (!exists) {
       throw new NotFoundException(
@@ -214,25 +188,6 @@ export class TicketsService {
     return ticket;
   }
 
-  /**
-   * Update flow enforces, in order:
-   *   1. ticket exists and is not soft-deleted (404)
-   *   2. DONE tickets are immutable (403)
-   *   3. optimistic-locking version match via If-Match header (412)
-   *   4. forward-only status progression (400)
-   *   5. blockers must be DONE before status → DONE (delegated via
-   *      `this.blockers` to break a circular module dependency)
-   *   6. user-supplied priority clears isOverdue so the user's reclassification
-   *      wins until the next escalation cycle re-evaluates the ticket; it does
-   *      NOT opt the ticket out of escalation
-   *   7. version increments on every successful save (handled by
-   *      `@VersionColumn`; we still catch the race-window
-   *      `OptimisticLockVersionMismatchError` and translate to 412)
-   *
-   * `expectedVersion` is the integer parsed from the `If-Match` request
-   * header; the missing-header case is rejected at the decorator layer
-   * with 428 so this method only sees a number.
-   */
   async update(
     id: number,
     dto: UpdateTicketDto,
@@ -301,12 +256,7 @@ export class TicketsService {
   ): Promise<void> {
     if (dto.assigneeId === undefined) return;
     if (dto.assigneeId !== null) {
-      const ok = await this.users.existsAndActive(dto.assigneeId);
-      if (!ok) {
-        throw new BadRequestException(
-          `Assignee ${dto.assigneeId} is missing or deleted`,
-        );
-      }
+      await this.users.assertActive(dto.assigneeId);
     }
     ticket.assigneeId = dto.assigneeId;
   }
@@ -317,9 +267,8 @@ export class TicketsService {
     if (dto.type !== undefined) ticket.type = dto.type;
     if (dto.dueDate !== undefined) ticket.dueDate = new Date(dto.dueDate);
     if (dto.priority !== undefined) {
-      // A manual priority change clears the overdue flag so the user's
-      // reclassification wins until the next escalation cycle re-evaluates
-      // the ticket. The ticket remains eligible for auto-escalation.
+      // Clearing isOverdue lets the user's reclassification win this cycle;
+      // the ticket remains eligible for auto-escalation on the next tick.
       ticket.priority = dto.priority;
       ticket.isOverdue = false;
     }
@@ -342,13 +291,6 @@ export class TicketsService {
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
 
-  /**
-   * `@VersionColumn` raises {@link OptimisticLockVersionMismatchError} when
-   * another writer commits between the load-check and the save; translate to
-   * the same 412 the explicit `assertVersionMatches` guard emits so callers
-   * see a uniform error envelope. We re-read the row to surface the freshest
-   * known version in the error body.
-   */
   private async saveWithVersionGuard(ticket: Ticket): Promise<Ticket> {
     try {
       return await this.tickets.save(ticket);
@@ -367,15 +309,8 @@ export class TicketsService {
     }
   }
 
-  /**
-   * Soft-delete a ticket and cascade-soft-delete its children. Children
-   * carry a `deletedByCascade` flag so the restore path can resurrect the
-   * set without relying on timestamp equality.
-   *
-   * Wrapped in a transaction with a pessimistic row lock so a concurrent
-   * escalation tick cannot race the delete and resurrect a half-deleted
-   * ticket with a bumped version.
-   */
+  // Pessimistic row lock prevents a concurrent escalation tick from racing
+  // the delete and resurrecting the row with a bumped version.
   async softDelete(
     id: number,
     actorUserId: number | null,
@@ -427,9 +362,6 @@ export class TicketsService {
       throw new NotFoundException(entityNotFound(EntityType.TICKET, id));
     }
     if (!ticket.deletedAt) return ticket;
-    // Single conditional UPDATE: clear `deletedAt` and `deletedByCascade` in
-    // one round-trip so a crash between the two no longer leaves a restored
-    // row with a stale cascade flag.
     await this.tickets
       .createQueryBuilder()
       .update(Ticket)
@@ -446,7 +378,6 @@ export class TicketsService {
     return this.tickets.findOne({ where: { id } }) as Promise<Ticket>;
   }
 
-  /** Cascade hook fired by ProjectsService.softDelete. */
   async cascadeSoftDeleteForProject(
     projectId: number,
     actorUserId: number | null = null,
@@ -469,7 +400,6 @@ export class TicketsService {
     );
   }
 
-  /** Cascade hook fired by ProjectsService.restore. */
   async cascadeRestoreForProject(
     projectId: number,
     actorUserId: number | null = null,
@@ -480,8 +410,6 @@ export class TicketsService {
     });
     if (candidates.length === 0) return;
     const ids = candidates.map((t) => t.id);
-    // Single conditional UPDATE: combined with #45 from the cleanup pass —
-    // clear `deletedAt` (restore) and `deletedByCascade` in one statement.
     await this.tickets
       .createQueryBuilder()
       .update(Ticket)
@@ -497,11 +425,6 @@ export class TicketsService {
     );
   }
 
-  /**
-   * Bulk audit insert for cascade ticket transitions. We build the rows in
-   * memory and hand them to `AuditLogService.record` one shot so the
-   * cascade no longer issues N sequential INSERTs (one per ticket).
-   */
   private async recordCascadeAuditRows(
     ticketIds: number[],
     action: AuditAction,
@@ -526,9 +449,6 @@ export class TicketsService {
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
-    // Iterate over the registered cascade handlers so adding a new child
-    // type (e.g. attachments → audit-events) needs only the entry in
-    // `registerCascadeTarget`; no edits here.
     for (const handler of this.softDeleteHandlers()) {
       await handler(ticketIds, actorUserId);
     }
@@ -583,11 +503,6 @@ export class TicketsService {
     return count > 0;
   }
 
-  /**
-   * Canonical "ticket must exist and not be soft-deleted" guard. Shared by
-   * the comment/attachment/dependency entry points so the 404 message stays
-   * consistent and the check can be tightened (e.g. row lock) in one place.
-   */
   async assertActive(id: number): Promise<void> {
     if (!(await this.existsAndActive(id))) {
       throw new NotFoundException(entityNotFound(EntityType.TICKET, id));

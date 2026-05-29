@@ -16,7 +16,7 @@ describe('TicketsCsvService', () => {
       findAllForProject: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ id: 1 }),
     };
-    projects = { existsAndActive: jest.fn().mockResolvedValue(true) };
+    projects = { assertActive: jest.fn().mockResolvedValue(undefined) };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -36,7 +36,9 @@ describe('TicketsCsvService', () => {
 
   describe('export', () => {
     it('throws when project is soft-deleted', async () => {
-      projects.existsAndActive.mockResolvedValueOnce(false);
+      projects.assertActive.mockRejectedValueOnce(
+        new NotFoundException('User 99 not found'),
+      );
       await expect(service.export(99)).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -69,7 +71,9 @@ describe('TicketsCsvService', () => {
 
   describe('import', () => {
     it('rejects when project is soft-deleted', async () => {
-      projects.existsAndActive.mockResolvedValueOnce(false);
+      projects.assertActive.mockRejectedValueOnce(
+        new NotFoundException('Project 99 not found'),
+      );
       await expect(
         service.import(
           99,
@@ -87,7 +91,6 @@ describe('TicketsCsvService', () => {
       const result = await service.import(1, file, 2);
       expect(result.created).toBe(1);
       expect(result.failed).toBe(1);
-      // Header is line 1, good row is line 2, bad row is line 3 in the file.
       expect(result.errors[0].row).toBe(3);
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({

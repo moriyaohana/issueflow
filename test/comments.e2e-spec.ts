@@ -236,7 +236,7 @@ describe('Comments + Mentions (e2e)', () => {
     expect(list.body[0].content).toBe('sticky @alice');
   });
 
-  it('refusing to comment when author is soft-deleted (400)', async () => {
+  it('refusing to comment when author is soft-deleted (404)', async () => {
     const ghost = await ctx.obtainToken({
       role: UserRole.DEVELOPER,
       username: 'edna',
@@ -249,6 +249,6 @@ describe('Comments + Mentions (e2e)', () => {
       .post(`/tickets/${ticketId}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ authorId: ghost.userId, content: 'hello' })
-      .expect(HttpStatus.BAD_REQUEST);
+      .expect(HttpStatus.NOT_FOUND);
   });
 });

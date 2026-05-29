@@ -2,9 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository, SelectQueryBuilder } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+// Ticket is referenced only via leftJoin(Ticket, …) for TypeORM metadata.
 import { Ticket } from '../entities/ticket.entity';
-// `Ticket` is referenced via `leftJoin(Ticket, …)` only — TypeORM needs the
-// entity class for metadata, but TypeScript can't see that usage.
 import { UserRole } from '../../common/enums/user-role.enum';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { ProjectsService } from '../../projects/projects.service';
@@ -22,20 +21,9 @@ export class AutoAssignService {
     private readonly projects: ProjectsService,
   ) {}
 
-  /**
-   * Picks the least-loaded active DEVELOPER in the project. Tie-break is the
-   * oldest `createdAt`. Returns `null` when no developer is available.
-   *
-   * Workload = count of non-DONE, non-deleted tickets assigned to the user
-   * inside that project. Admins are excluded because the role is
-   * intentionally separate from delivery work.
-   *
-   * When called from inside a transaction (typically from
-   * `TicketsService.create`), the caller passes an `EntityManager` so the
-   * workload count is read against the same snapshot the upcoming ticket
-   * insert commits against — two concurrent POSTs in the same project can't
-   * race to pick the same developer.
-   */
+  // Picks the least-loaded active DEVELOPER in the project, oldest createdAt
+  // wins ties. Pass `manager` from a transaction so the workload count joins
+  // the same snapshot as the upcoming ticket insert.
   async pickAssignee(
     projectId: number,
     manager?: EntityManager,
@@ -48,16 +36,11 @@ export class AutoAssignService {
       .limit(1);
     const row = await qb.getRawOne<{ id: number | string; load: number }>();
     if (!row) return null;
-    // Defensive: pg returns `int` as JS number, but some drivers / mocked
-    // values (and historic test fixtures) still hand back strings.
     return typeof row.id === 'string' ? parseInt(row.id, 10) : row.id;
   }
 
   async getProjectWorkload(projectId: number): Promise<WorkloadEntry[]> {
-    const active = await this.projects.existsAndActive(projectId);
-    if (!active) {
-      throw new NotFoundException(`Project ${projectId} not found`);
-    }
+    await this.projects.assertActive(projectId);
     const rows = await this.workloadQuery(projectId)
       .addGroupBy('u.username')
       .select('u.id', 'userId')
@@ -81,15 +64,6 @@ export class AutoAssignService {
     }));
   }
 
-  /**
-   * Shared base of the workload aggregation: join users → assigned-and-live
-   * tickets per project, filter to active developers, group by user
-   * id/createdAt. Both `pickAssignee` (limit 1) and `getProjectWorkload`
-   * (full list with username) tack their projections / ordering on top.
-   *
-   * When `manager` is provided we route the query through its `User`
-   * repository so the read participates in the caller's transaction.
-   */
   private workloadQuery(
     projectId: number,
     manager?: EntityManager,

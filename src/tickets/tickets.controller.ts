@@ -45,8 +45,7 @@ export class TicketsController {
     private readonly csv: TicketsCsvService,
   ) {}
 
-  // Static segments are declared before `:ticketId` so they aren't shadowed
-  // by Express's route trie (registration order matters here).
+  // `/deleted` and `/export` must precede `:ticketId` or the wildcard wins.
   @Get('deleted')
   @Roles(UserRole.ADMIN)
   async listDeleted(
@@ -94,10 +93,6 @@ export class TicketsController {
       }),
     )
     file: Express.Multer.File,
-    // Multer stuffs all non-file form parts into `req.body` as strings, so the
-    // DTO uses `@Type(() => Number)` to coerce `projectId` before validation.
-    // Routing through a DTO (rather than `@Body('projectId', ParseIntPipe)`)
-    // lets the global `forbidNonWhitelisted` rule reject stowaway form fields.
     @Body() dto: ImportTicketsDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<ImportResult> {
@@ -118,9 +113,8 @@ export class TicketsController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<TicketResponseDto> {
     const ticket = await this.tickets.findOne(ticketId);
-    // Single-ticket reads must emit the ETag so clients can pick up the
-    // current version for subsequent If-Match writes. The interceptor only
-    // sees the DTO (no `version`), so we set the header explicitly here.
+    // ETagInterceptor only fires on bodies that carry `version`; the DTO drops
+    // it so we set the header explicitly here.
     res.setHeader('ETag', `W/"${ticket.version}"`);
     return TicketResponseDto.fromEntity(ticket);
   }
@@ -146,10 +140,6 @@ export class TicketsController {
     @IfMatch() expectedVersion: number,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    // README documents an empty 200 body; the new version is conveyed
-    // exclusively via the `ETag` header so clients can use it for the next
-    // If-Match round-trip. We set the header manually because the global
-    // ETagInterceptor only fires when the body itself carries `version`.
     const saved = await this.tickets.update(
       ticketId,
       dto,
@@ -177,10 +167,6 @@ export class TicketsController {
     @CurrentUser() actor: CurrentUserPayload,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    // Post-restore version is the canonical fresh version a follow-up
-    // PATCH/DELETE must match against. Empty body per README; ETag header
-    // carries the version manually because the global interceptor expects
-    // a body object with a numeric `version` to fire.
     const restored = await this.tickets.restore(ticketId, actor.id);
     res.setHeader('ETag', `W/"${restored.version}"`);
   }

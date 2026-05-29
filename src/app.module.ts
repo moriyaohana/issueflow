@@ -30,16 +30,9 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
       useFactory: (config: ConfigService) => buildTypeOrmOptions(config),
     }),
     ScheduleModule.forRoot(),
-    // Throttler is wired here so any controller can opt-in via
-    // `@UseGuards(ThrottlerGuard)` + `@Throttle(...)`. We deliberately do NOT
-    // register ThrottlerGuard as APP_GUARD — a global guard would rate-limit
-    // every route and produce noisy 429s across the e2e suite. The login
-    // route applies it route-locally. Defaults below are generous and only
-    // kick in if a future caller opts in without their own `@Throttle`
-    // override. The skipIf bypass disables throttling under NODE_ENV=test so
-    // the e2e suite (which logs in many test users from the same loopback IP
-    // in a tight loop) doesn't trip the per-IP quota; production behaviour is
-    // unchanged.
+    // Throttler is wired here but not registered as APP_GUARD: callers opt in
+    // route-locally so the e2e suite (lots of loopback logins) isn't affected,
+    // and skipIf disables the limiter entirely under NODE_ENV=test.
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 100 }],
       skipIf: () => process.env.NODE_ENV === 'test',
@@ -57,19 +50,11 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
   ],
   controllers: [HealthController],
   providers: [
-    // Global guards run in registration order. JwtAuthGuard MUST come first so
-    // it populates `request.user`; RolesGuard then reads `user.role` to enforce
-    // `@Roles(...)` annotations. Handlers without `@Roles` short-circuit to
-    // allow inside RolesGuard.
+    // JwtAuthGuard must register before RolesGuard so request.user exists
+    // before RolesGuard reads user.role.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    // Strip the internal `version` field from responses and emit it as a weak
-    // ETag header instead, so optimistic concurrency is carried purely over
-    // HTTP headers.
     { provide: APP_INTERCEPTOR, useClass: ETagInterceptor },
-    // Catch-all exception filter: passes HttpException through unchanged,
-    // and renders any other thrown value as a generic 500 with a logged
-    // stack so we never leak internal error strings over the wire.
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
   ],
 })

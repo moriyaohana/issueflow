@@ -35,10 +35,8 @@ export class DependenciesController {
     await this.deps.add(ticketId, dto.blockedBy, actor.id);
   }
 
-  // URL segment stays `:blockerId` for backwards compatibility with clients
-  // that hit `DELETE /tickets/:id/dependencies/:blockerId` (the original
-  // README routing). The internal service parameter is named `blockedBy` to
-  // match the entity field rename.
+  // Route segment stays `:blockerId` to match the documented README URL; the
+  // service param is `blockedBy` to match the entity field.
   @Delete(':blockerId')
   @HttpCode(HttpStatus.OK)
   async remove(

@@ -29,13 +29,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  /**
-   * Validates a decoded JWT payload. Three rejection paths exist:
-   *   1. The `jti` is in the deny-list (token was explicitly logged out).
-   *   2. The user no longer exists (account was hard-deleted - shouldn't
-   *      happen in this system but defended for safety).
-   *   3. The user was soft-deleted after the token was issued.
-   */
   async validate(payload: JwtPayload): Promise<{
     id: number;
     username: string;
@@ -52,18 +45,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (await this.invalidated.has(payload.jti)) {
       throw new UnauthorizedException('Token has been revoked');
     }
-    // Reject tokens whose `role` claim isn't part of the current UserRole
-    // vocabulary. This guards against legacy tokens signed before a role was
-    // retired and prevents a forged/typo'd role string from sneaking past
-    // RolesGuard (which does an `includes` check on string equality).
     if (!Object.values(UserRole).includes(payload.role as UserRole)) {
       throw new UnauthorizedException('Token has an unknown role');
     }
-    // Previously this was two separate calls (`existsAndActive` + an implicit
-    // fetch later). We collapse to a single live-only `findActiveById` and
-    // reuse its result. The deny-list lookup above remains its own query
-    // because it lives in a different table — inlining via JOIN would be
-    // micro-optimization for negligible gain.
     const active = await this.users.findActiveById(payload.sub);
     if (!active) {
       throw new UnauthorizedException('User no longer active');

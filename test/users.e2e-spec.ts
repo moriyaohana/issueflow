@@ -138,9 +138,6 @@ describe('Users (e2e)', () => {
   it('forbids a non-admin from creating any user (writes are admin-only)', async () => {
     const dev = await ctx.obtainToken({ role: UserRole.DEVELOPER });
 
-    // Both attempts — escalating to ADMIN and the "innocent" DEVELOPER case —
-    // are forbidden now that create is locked behind @Roles(ADMIN). The
-    // ADMIN-promotion check still lives in the service for non-HTTP callers.
     await request(ctx.app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${dev.accessToken}`)
@@ -181,14 +178,12 @@ describe('Users (e2e)', () => {
       })
       .expect(HttpStatus.OK);
 
-    // ADMIN-role escalation is rejected.
     await request(ctx.app.getHttpServer())
       .post(`/users/update/${target.body.id}`)
       .set('Authorization', `Bearer ${dev.accessToken}`)
       .send({ role: 'ADMIN' })
       .expect(HttpStatus.FORBIDDEN);
 
-    // A "harmless" rename is also rejected — non-admins have no write access.
     await request(ctx.app.getHttpServer())
       .post(`/users/update/${target.body.id}`)
       .set('Authorization', `Bearer ${dev.accessToken}`)

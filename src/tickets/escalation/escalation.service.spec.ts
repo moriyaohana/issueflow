@@ -27,12 +27,6 @@ function makeTicket(overrides: Partial<Ticket>): Ticket {
   } as Ticket;
 }
 
-/**
- * Mock the bulk-UPDATE QueryBuilder chain used by `runEscalation`. We don't
- * care about the SQL it would generate; we only need the chain to resolve
- * without throwing so the in-memory mutation pass at the end of
- * `runEscalation` runs and the audit-record fan-out fires.
- */
 function makeUpdateBuilder() {
   return {
     update: jest.fn().mockReturnThis(),
@@ -50,8 +44,6 @@ describe('EscalationService', () => {
   let auditCall: jest.Mock;
 
   beforeEach(async () => {
-    // The find query is now a QueryBuilder (`createQueryBuilder('t')` +
-    // `where/andWhere/getMany`); mock the same shape.
     const selectChain = {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),

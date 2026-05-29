@@ -15,11 +15,6 @@ import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { entityNotFound } from '../common/errors/messages';
 
-/**
- * Cascade hook contract: TicketsService (Agent 5) implements these and
- * registers itself via setCascadeHandler so ProjectsService can call them
- * without a hard module dependency.
- */
 export interface ProjectCascadeHandler {
   cascadeSoftDeleteForProject(
     projectId: number,
@@ -50,19 +45,8 @@ export class ProjectsService {
     dto: CreateProjectDto,
     actorUserId: number | null = null,
   ): Promise<Project> {
-    const ownerActive = await this.users.existsAndActive(dto.ownerId);
-    if (!ownerActive) {
-      // Distinguish "owner missing" (404) from "owner soft-deleted" (400).
-      // Use the null-returning lookup so existence-vs-deletion is a branch on a
-      // value, not a try/catch around a throwing helper.
-      const owner = await this.users.findOptionalIncludingDeleted(dto.ownerId);
-      if (!owner) {
-        throw new NotFoundException(
-          entityNotFound(EntityType.USER, dto.ownerId),
-        );
-      }
-      throw new BadRequestException(`Owner user ${dto.ownerId} is deleted`);
-    }
+    await this.users.assertActive(dto.ownerId);
+
     const project = this.projects.create({
       name: dto.name,
       description: dto.description,
@@ -105,9 +89,6 @@ export class ProjectsService {
     actorUserId: number | null = null,
   ): Promise<Project> {
     const project = await this.findOne(id);
-    // Short-circuit no-op PATCHes: an empty body should be a successful 200
-    // (idempotent) without producing a write or an audit row. Saves a UPDATE
-    // round-trip plus an `audit_logs` insert on every spurious call.
     if (Object.keys(dto).length === 0) {
       return project;
     }
@@ -128,10 +109,6 @@ export class ProjectsService {
     actorUserId: number | null = null,
   ): Promise<void> {
     const project = await this.findOne(id);
-    // Wrap soft-delete + cascade + audit in one transaction so a crash mid-way
-    // cannot leave the project deleted with its tickets still live (or vice
-    // versa). Audit is written inside the same TX via the shared `record` path
-    // so an audit-write failure also rolls the delete back.
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(Project).softRemove(project);
       await this.audit.record({
@@ -176,9 +153,6 @@ export class ProjectsService {
         actorUserId,
       );
     }
-    // The row was just restored above, so a missing read here would indicate a
-    // race (a concurrent hard-delete that we don't support). Throw the
-    // canonical 404 instead of casting the null away.
     const restored = await this.projects.findOne({ where: { id } });
     if (!restored) {
       throw new NotFoundException(entityNotFound(EntityType.PROJECT, id));
@@ -193,12 +167,12 @@ export class ProjectsService {
     return count > 0;
   }
 
-  /**
-   * Like {@link existsAndActive} but also returns true for soft-deleted
-   * projects. Used by forensics-style endpoints (e.g. listing the cascade
-   * trail under a soft-deleted project) that still need to reject totally
-   * unknown FK ids.
-   */
+  async assertActive(id: number): Promise<void> {
+    if (!(await this.existsAndActive(id))) {
+      throw new NotFoundException(entityNotFound(EntityType.PROJECT, id));
+    }
+  }
+
   async existsIncludingDeleted(id: number): Promise<boolean> {
     const count = await this.projects.count({
       where: { id },

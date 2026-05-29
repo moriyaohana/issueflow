@@ -31,8 +31,6 @@ export class AuthService {
   async login(dto: LoginDto): Promise<{ result: LoginResult; userId: number }> {
     const user = await this.users.findByUsernameWithPassword(dto.username);
     if (!user) {
-      // Brute-force / credential-stuffing signal: record the attempt even when
-      // the username doesn't resolve. We never persist the password itself.
       await this.audit.record({
         action: AuditAction.LOGIN_FAILED,
         entityType: EntityType.USER,
@@ -54,10 +52,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     const jti = uuidv4();
-    // `process.env` values are strings; ConfigService preserves that, so we
-    // must coerce explicitly to avoid `expiresIn` round-tripping to clients as
-    // a string. The signing library also expects a number-or-duration-string,
-    // and a string of digits is treated as ms — using a number is the safe path.
     const expiresInSeconds = parseInt(
       this.config.get<string>('JWT_EXPIRES_IN', '3600'),
       10,
@@ -90,9 +84,9 @@ export class AuthService {
   ): Promise<void> {
     const expiresAt = new Date(expirySeconds * 1000);
     await this.invalidated.add(jti, expiresAt);
-    // Logout = invalidating the session token; modelled as DELETE on the user
-    // session (entityType=USER, entityId=user id). The README vocabulary
-    // doesn't include a dedicated LOGOUT verb.
+    // Logout is recorded as DELETE on the user session — the README's audit
+    // vocabulary has no dedicated LOGOUT verb; the `event: 'logout'` metadata
+    // tag distinguishes it from an actual user deletion.
     await this.audit.record({
       action: AuditAction.DELETE,
       entityType: EntityType.USER,

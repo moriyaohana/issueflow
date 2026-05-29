@@ -52,14 +52,9 @@ describe('CommentsService', () => {
     };
     userRepo = { find: jest.fn().mockResolvedValue([]) };
 
-    // The transactional manager hands out per-repository proxies. We forward
-    // every getRepository(X) call to a small object that mirrors the real
-    // repos used in the service body.
     const txCommentRepo = {
       findOne: jest.fn(),
-      // Simulate `@VersionColumn`: TypeORM bumps `version` on every entity
-      // `save()`. The manual `comment.version += 1` was removed when the
-      // column was switched, so the test repo has to model the bump.
+      // Simulate @VersionColumn bump so v1→v2 progression assertions pass.
       save: jest.fn().mockImplementation((c) => {
         c.version = (c.version ?? 0) + 1;
         return Promise.resolve(c);
@@ -85,11 +80,8 @@ describe('CommentsService', () => {
     };
 
     mentionParser = { resolve: jest.fn().mockResolvedValue([]) };
-    tickets = {
-      existsAndActive: jest.fn().mockResolvedValue(true),
-      assertActive: jest.fn().mockResolvedValue(undefined),
-    };
-    users = { existsAndActive: jest.fn().mockResolvedValue(true) };
+    tickets = { assertActive: jest.fn().mockResolvedValue(undefined) };
+    users = { assertActive: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -143,7 +135,6 @@ describe('CommentsService', () => {
     const txCommentRepo = dataSource.__tx.txCommentRepo;
     txCommentRepo.findOne.mockResolvedValueOnce(makeComment({ version: 1 }));
     await service.update(1, 1, { content: 'x' }, null, 1);
-    // The new path uses Repository.findOne, never createQueryBuilder().setLock.
     expect((txCommentRepo as any).createQueryBuilder).toBeUndefined();
   });
 

@@ -42,10 +42,8 @@ describe('Attachments (e2e)', () => {
     const upload = await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticketId}/attachments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      // PNG signature + padding. `FileTypeValidator` now inspects magic
-      // numbers (it no longer trusts Content-Type), and the underlying
-      // `file-type` parser reads a chunk header past the 8-byte signature,
-      // so the buffer must be long enough for that lookahead to succeed.
+      // 8-byte PNG signature plus padding so file-type's chunk-header
+      // lookahead has bytes to read.
       .attach(
         'file',
         Buffer.concat([
@@ -116,11 +114,8 @@ describe('Attachments (e2e)', () => {
     const upload = await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticket.body.id}/attachments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      // The validator now inspects magic numbers, and `file-type` cannot
-      // detect plain text. Use a minimal PDF (which has a real `%PDF-`
-      // signature) with padding so the parser's lookahead doesn't fall off
-      // the end of the buffer — the goal of this case is to assert cascade
-      // behaviour, not to exercise text/plain specifically.
+      // Real %PDF- signature: text/plain has no magic bytes so file-type
+      // can't detect it; this case only needs to assert cascade behaviour.
       .attach(
         'file',
         Buffer.concat([

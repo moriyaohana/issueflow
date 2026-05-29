@@ -4,6 +4,7 @@ import { NotFoundException } from '@nestjs/common';
 import { AutoAssignService } from './auto-assign.service';
 import { User } from '../../users/entities/user.entity';
 import { ProjectsService } from '../../projects/projects.service';
+import { JsonWebTokenError } from '@nestjs/jwt';
 
 describe('AutoAssignService', () => {
   let service: AutoAssignService;
@@ -26,7 +27,9 @@ describe('AutoAssignService', () => {
       getRawMany: jest.fn(),
     };
     usersRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
-    projects = { existsAndActive: jest.fn().mockResolvedValue(true) };
+    projects = { 
+      assertActive: jest.fn().mockResolvedValue(undefined),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AutoAssignService,
@@ -50,7 +53,9 @@ describe('AutoAssignService', () => {
   });
 
   it('getProjectWorkload throws NotFoundException for an unknown project', async () => {
-    projects.existsAndActive.mockResolvedValueOnce(false);
+    projects.assertActive.mockRejectedValueOnce(
+      new NotFoundException('Project 999 not found'),
+    );
     await expect(service.getProjectWorkload(999)).rejects.toBeInstanceOf(
       NotFoundException,
     );

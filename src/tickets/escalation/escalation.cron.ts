@@ -10,9 +10,6 @@ export class EscalationCron {
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handle(): Promise<void> {
-    // Cron is a fire-and-forget trigger — there is no caller to surface errors
-    // to, so a thrown escalation halfway through the loop would silently drop
-    // the remaining audit rows the next tick won't retry. Catch, log, swallow.
     try {
       const affected = await this.escalation.runEscalation();
       this.logger.log(`Escalation tick: ${affected} ticket(s) updated`);

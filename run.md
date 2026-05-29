@@ -112,26 +112,4 @@ curl "http://localhost:3000/tickets/export?projectId=1" \
 curl "http://localhost:3000/audit-logs?entityType=TICKET" \
   -H "Authorization: Bearer $TOKEN"
 ```
-
-## Architecture notes
-
-- **JWT logout** is enforced via a server-side `invalidated_tokens` table
-  with a `jti` (UUID) on every token. `JwtStrategy.validate` checks the
-  deny-list on every request.
-- **Optimistic locking** on tickets: every PATCH carries the current
-  `version`; mismatch → 409.
-- **Pessimistic locking** on comment updates: the row is locked via
-  `setLock('pessimistic_write')` for the duration of the transaction.
-- **Soft delete** for users / projects / tickets via TypeORM
-  `@DeleteDateColumn`. Cascading: project → tickets → comments / attachments
-  / dependencies (comments and attachments are hard-deleted; their cascade
-  is tracked via the `deletedByCascade` flag on tickets so project restore
-  only resurrects the right rows).
-- **Audit log** receives a row for every state change. System-driven
-  actions (`AUTO_ASSIGN`, `AUTO_ESCALATE`, and the cascaded
-  `TICKET_DELETE` / `COMMENT_DELETE` rows) carry `actor=SYSTEM` or
-  `metadata.cascade=true` so reports can filter cleanly.
-- **Static-vs-parameterised routes**: `/tickets/export`, `/tickets/import`,
-  `/tickets/deleted`, and `/projects/deleted` are declared ahead of
-  `:ticketId` / `:projectId` in their controllers to win the Express
-  routing trie.
+ 

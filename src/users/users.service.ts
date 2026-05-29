@@ -17,13 +17,8 @@ import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { UserRole } from '../common/enums/user-role.enum';
+import { entityNotFound } from '../common/errors/messages';
 
-/**
- * Minimal shape of the authenticated caller required to authorise role-bearing
- * writes. Accepting an `Actor` (rather than just an id) keeps the policy in
- * the service while letting controllers forward whatever JWT payload they
- * already have.
- */
 export interface Actor {
   id: number;
   role: UserRole;
@@ -44,9 +39,7 @@ export class UsersService {
     dto: CreateUserDto,
     actor: Actor | null = null,
   ): Promise<UserResponseDto> {
-    // Role-assignment policy lives in the service so non-HTTP callers can't
-    // bypass it. Internal callers (seed scripts, the e2e test factory) pass
-    // `actor = null` and are trusted; only HTTP requests forward a real actor.
+    // null actor = trusted internal caller (seed scripts, e2e factory).
     if (actor && dto.role === UserRole.ADMIN && actor.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Only admins can assign the ADMIN role');
     }
@@ -90,23 +83,12 @@ export class UsersService {
     return UserResponseDto.fromEntity(user);
   }
 
-  /**
-   * Internal lookup that returns the raw entity including soft-deleted rows.
-   * Used by restore and by audit/cascade flows that legitimately need to see
-   * a user that's been removed from public listings.
-   */
   async findOneIncludingDeleted(id: number): Promise<User> {
     const user = await this.findOptionalIncludingDeleted(id);
     if (!user) throw new NotFoundException(`User ${id} not found`);
     return user;
   }
 
-  /**
-   * Null-returning variant of {@link findOneIncludingDeleted} for callers
-   * that need to branch on existence without paying for an exception. Used
-   * by `ProjectsService.create` to distinguish "owner missing" (404) from
-   * "owner soft-deleted" (400) without abusing try/catch for control flow.
-   */
   async findOptionalIncludingDeleted(id: number): Promise<User | null> {
     return this.users.findOne({
       where: { id },
@@ -119,10 +101,8 @@ export class UsersService {
     dto: UpdateUserDto,
     actor: Actor | null = null,
   ): Promise<UserResponseDto> {
-    // Role writes are admin-only, and an admin cannot change their own role
-    // (prevents an ADMIN demoting themselves and locking the system out).
-    // Non-role fields (e.g. `fullName`) are unaffected — an ADMIN can still
-    // rename themselves.
+    // Self-role-change is rejected so an admin can't demote themselves and
+    // lock everyone out; non-role updates are always allowed.
     if (actor && dto.role !== undefined) {
       if (actor.role !== UserRole.ADMIN) {
         throw new ForbiddenException('Only admins can change a user role');
@@ -165,11 +145,7 @@ export class UsersService {
     });
   }
 
-  /**
-   * Returns the raw User including `passwordHash`. Soft-deleted users are
-   * excluded so a deleted account cannot authenticate.
-   * Used only by AuthService.login during password verification.
-   */
+  // Only path that opts into `passwordHash` (entity has `select: false`).
   async findByUsernameWithPassword(username: string): Promise<User | null> {
     return this.users.findOne({
       where: { username, deletedAt: IsNull() },
@@ -192,13 +168,12 @@ export class UsersService {
     return count > 0;
   }
 
-  /**
-   * Lean lookup used on the auth hot-path (JwtStrategy.validate runs on every
-   * authenticated request). Returns the minimal `{id, role}` projection of an
-   * active user, or null if the row is missing/soft-deleted. Collapses the
-   * previous existsAndActive + (implicit) role-from-payload pair into a single
-   * query against the live row.
-   */
+  async assertActive(id: number): Promise<void> {
+    if (!(await this.existsAndActive(id))) {
+      throw new NotFoundException(entityNotFound(EntityType.USER, id));
+    }
+  }
+
   async findActiveById(
     id: number,
   ): Promise<Pick<User, 'id' | 'role'> | null> {
@@ -208,14 +183,6 @@ export class UsersService {
     });
   }
 
-  /**
-   * Case-insensitive lookup for @mention parsing. Soft-deleted users are
-   * excluded so we never persist mentions pointing at hidden accounts.
-   *
-   * Projection is narrowed to the wire-safe `MentionParser` shape so even
-   * a future caller that forgets to map through `ResolvedMention` cannot
-   * leak `email` / `passwordHash` over the wire.
-   */
   async findByUsernamesCaseInsensitive(
     usernames: string[],
   ): Promise<Pick<User, 'id' | 'username' | 'fullName'>[]> {

@@ -1,20 +1,9 @@
-/**
- * Subset of `User` we are willing to expose inside a comment's
- * `mentionedUsers` array. `email` and `passwordHash` are intentionally
- * absent — leaking either via a mention payload would be a regression.
- */
 export interface MentionedUser {
   id: number;
   username: string;
   fullName: string;
 }
 
-/**
- * Minimal shape needed to build a {@link CommentResponseDto}. Accepts both
- * the raw entity and the service-internal `CommentResponse` (which carries
- * `version` out-of-band for ETag) without forcing either side to know about
- * the other's shape.
- */
 export interface CommentLike {
   id: number;
   ticketId: number;
@@ -22,12 +11,6 @@ export interface CommentLike {
   content: string;
 }
 
-/**
- * Wire shape for comment responses. Matches the README documented set of
- * fields exactly so internal columns (`version`, `deletedByCascade`,
- * `deletedAt`, `createdAt`, `updatedAt`) cannot leak. `version` is conveyed
- * out-of-band via the `ETag` header for the write endpoints.
- */
 export class CommentResponseDto {
   id: number;
   ticketId: number;

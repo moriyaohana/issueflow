@@ -70,7 +70,7 @@ Candidates are expected to design and implement the above APIs, adhering to REST
 |-------------------------|------------------|-------------------------------------------------------|-----------------|---------------|
 | Login (obtain JWT)      | POST /auth/login | `{ "username": "jdoe", "password": "secret" }`       | 200 OK          | `{ "accessToken": "<jwt>", "tokenType": "Bearer", "expiresIn": 3600 }` |
 | Logout (invalidate token) | POST /auth/logout |                                                     | 200 OK          | |
-| Get current user        | GET /auth/me     |    
+| Get current user        | GET /auth/me     |                                                        | 200 OK          | `{ "username": "jdoe", "email": "jdoe@example.com", "fullName": "John Doe", "role": "DEVELOPER" }` |
 
 ---
 

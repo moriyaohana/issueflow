@@ -23,7 +23,6 @@ describe('DependenciesService', () => {
   let ticketsService: { assertActive: jest.Mock };
   let audit: { record: jest.Mock };
   let dataSource: any;
-  // Per-transaction repos used by `add`'s `dataSource.transaction` callback.
   let txTicketRepo: any;
   let txDepsRepo: any;
   let txAuditRepo: any;
@@ -43,8 +42,6 @@ describe('DependenciesService', () => {
     ticketsService = { assertActive: jest.fn().mockResolvedValue(undefined) };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
 
-    // QueryBuilder chain on `txTicketRepo` powers the pessimistic-lock
-    // load in `add`. Default to a not-found row; specific tests override.
     const ticketQbDefault = {
       setLock: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
@@ -105,7 +102,6 @@ describe('DependenciesService', () => {
   });
 
   it('soft-deleted ticket rejected with 404', async () => {
-    // Default `__qb.getOne` returns null → 404 path.
     await expect(service.add(1, 2)).rejects.toBeInstanceOf(NotFoundException);
   });
 

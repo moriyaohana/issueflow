@@ -37,15 +37,11 @@ export class MentionsController {
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<PaginatedMentionsResponse> {
-    // 403 before 404: a non-admin asking for another user's feed gets the
-    // same response whether the target exists or not — avoids leaking
-    // user-existence to unauthorised callers.
+    // 403 before 404 so existence of the target user isn't leaked.
     if (actor.role !== UserRole.ADMIN && actor.id !== userId) {
       throw new ForbiddenException("Cannot read another user's mention feed");
     }
-    if (!(await this.users.existsAndActive(userId))) {
-      throw new NotFoundException(`User ${userId} not found`);
-    }
+    await this.users.assertActive(userId);
     const result = await this.comments.getMentionsForUser(
       userId,
       page,

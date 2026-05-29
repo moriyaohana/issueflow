@@ -37,9 +37,8 @@ export class AttachmentsController {
   async upload(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @UploadedFile(
-      // No `skipMagicNumbersValidation` — we want `FileTypeValidator` to
-      // inspect the file signature instead of trusting the client-supplied
-      // `Content-Type` header, so a renamed `.exe` can't pass as `image/png`.
+      // FileTypeValidator inspects the file signature (no
+      // skipMagicNumbersValidation) so a renamed exe can't pass as image/png.
       new ParseFilePipe({
         fileIsRequired: true,
         validators: [
@@ -57,10 +56,6 @@ export class AttachmentsController {
       file,
       actorUserId: actor.id,
     });
-    // README documents `{id, ticketId, filename, contentType}` only — the
-    // service returns the same shape via `AttachmentMetadata`, but routing
-    // through the DTO keeps the wire contract explicit and survives any
-    // future widening of the service-internal type.
     const dto = new AttachmentResponseDto();
     dto.id = saved.id;
     dto.ticketId = saved.ticketId;

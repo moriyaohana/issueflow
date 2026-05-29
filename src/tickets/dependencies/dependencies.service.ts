@@ -29,11 +29,6 @@ export class DependenciesService {
     private readonly audit: AuditLogService,
   ) {}
 
-  /**
-   * Insert a dependency under a row-locked transaction so two concurrent
-   * `POST /tickets/:id/dependencies` requests cannot both pass the
-   * "duplicate already exists" guard and land conflicting rows.
-   */
   async add(
     ticketId: number,
     blockedBy: number,
@@ -45,10 +40,8 @@ export class DependenciesService {
     await this.dataSource.transaction(async (manager) => {
       const ticketRepo = manager.getRepository(Ticket);
       const depsRepo = manager.getRepository(TicketDependency);
-      // Lock the parent row so concurrent inserts serialise; the blocker
-      // is read non-locking — it only has to exist + be in the same
-      // project, both of which are immutable for the lifetime of the
-      // transaction.
+      // Lock the parent row so concurrent inserts serialise; the blocker is
+      // read non-locking — its identity/project is immutable.
       const ticket = await ticketRepo
         .createQueryBuilder('t')
         .setLock('pessimistic_write')
@@ -97,9 +90,6 @@ export class DependenciesService {
       where: liveOnly<TicketDependency>({ ticketId }),
     });
     if (rows.length === 0) return [];
-    // Tighten the projection to the three columns we return so we never
-    // pay to hydrate description/version/dueDate just to drop them. Keeps
-    // the round-trip cheap on tickets with many blockers.
     const blockers = await this.tickets.find({
       where: liveOnly<Ticket>({ id: In(rows.map((r) => r.blockedBy)) }),
       select: ['id', 'title', 'status'],
@@ -136,11 +126,6 @@ export class DependenciesService {
     });
   }
 
-  /**
-   * Called by TicketsService.update when status is being moved to DONE.
-   * Fails fast if any blocker is still non-DONE; the unresolved blocker IDs
-   * are returned in the error body so the client can react.
-   */
   async assertBlockersResolvedForDone(ticketId: number): Promise<void> {
     const deps = await this.deps.find({
       where: { ticketId, deletedAt: IsNull() },
@@ -160,11 +145,6 @@ export class DependenciesService {
     }
   }
 
-  /**
-   * Cascade hook fired by ticket soft-delete. Soft-deletes every live
-   * dependency that references the given tickets on either side and stamps
-   * `deletedByCascade` so a later ticket restore can resurrect them as a set.
-   */
   async cascadeSoftDeleteDependencies(
     ticketIds: number[],
     actorUserId: number | null = null,
@@ -196,10 +176,6 @@ export class DependenciesService {
     }
   }
 
-  /**
-   * Restore previously cascade-soft-deleted dependencies. Only rows flagged
-   * with `deletedByCascade` are resurrected; the flag is cleared on restore.
-   */
   async cascadeRestoreDependencies(
     ticketIds: number[],
     actorUserId: number | null = null,

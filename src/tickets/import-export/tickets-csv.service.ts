@@ -81,20 +81,13 @@ export class TicketsCsvService {
     projectId: number,
     actorUserId: number | null = null,
   ): Promise<string> {
-    const active = await this.projects.existsAndActive(projectId);
-    if (!active) {
-      throw new NotFoundException(`Project ${projectId} not found`);
-    }
+    await this.projects.assertActive(projectId);
     const rows = await this.tickets.findAllForProject(projectId);
     const csv = stringify(rows.map(rowFromTicket), {
       header: true,
       columns: [...COLUMNS],
       quoted: true,
     });
-    // Export is logged as a CREATE on the project (a new CSV artifact). The
-    // README vocabulary doesn't include a dedicated EXPORT verb; the
-    // `event: 'export'` metadata tag preserves the original semantics for
-    // forensics.
     await this.audit.record({
       action: AuditAction.CREATE,
       entityType: EntityType.PROJECT,
@@ -110,19 +103,13 @@ export class TicketsCsvService {
     file: { buffer: Buffer; originalname: string },
     actorUserId: number | null = null,
   ): Promise<ImportResult> {
-    const active = await this.projects.existsAndActive(projectId);
-    if (!active) {
-      throw new NotFoundException(`Project ${projectId} not found`);
-    }
+    await this.projects.assertActive(projectId);
     const records: Record<string, string>[] = parse(file.buffer, {
       columns: true,
       skip_empty_lines: true,
       trim: true,
     });
     if (records.length > MAX_IMPORT_ROWS) {
-      // Reject oversized imports up-front: without this guard a 10 MB CSV of
-      // narrow rows could still spawn thousands of per-row transactions and
-      // exhaust the request timeout. Caller is expected to chunk client-side.
       throw new BadRequestException(
         `Too many rows — limit is ${MAX_IMPORT_ROWS}`,
       );
@@ -131,16 +118,11 @@ export class TicketsCsvService {
     let created = 0;
     for (let i = 0; i < records.length; i++) {
       const dto = ticketFromRow(records[i], projectId);
-      // `forbidNonWhitelisted` makes CSVs with stowaway columns (e.g. a
-      // typo'd header or a malicious `role`) surface as row errors instead
-      // of being silently stripped. Same posture as the global ValidationPipe.
       const violations = await validate(dto, {
         whitelist: true,
         forbidNonWhitelisted: true,
       });
-      // CSV row index → file line number: row 0 of the parser is the row
-      // after the header (i.e. line 2 of the file). Report the human-visible
-      // line so the error message matches what the operator sees in the CSV.
+      // i+2: file line 1 is the header, so parser row 0 lives on file line 2.
       const fileLine = i + 2;
       if (violations.length > 0) {
         errors.push({
@@ -158,9 +140,6 @@ export class TicketsCsvService {
         errors.push({ row: fileLine, error: this.toRowErrorMessage(err) });
       }
     }
-    // Import is logged as CREATE on the project; the per-ticket CREATE rows
-    // are emitted by TicketsService.create. The `event: 'import'` metadata tag
-    // distinguishes this summary row from a plain project creation.
     await this.audit.record({
       action: AuditAction.CREATE,
       entityType: EntityType.PROJECT,
@@ -171,14 +150,8 @@ export class TicketsCsvService {
     return { created, failed: errors.length, errors };
   }
 
-  /**
-   * Project a row-level error into the public `errors[]` payload. We surface
-   * the user-facing message from validated `HttpException`s (which already
-   * carries an audited, internationalisable string) and replace every other
-   * thrown shape with a generic `'Internal error'` to avoid leaking raw
-   * exception text (stack traces, query strings, PII) over the wire. The
-   * original error is logged for ops triage.
-   */
+  // HttpException messages are user-safe; everything else is logged and
+  // replaced with a generic string to avoid leaking internal text.
   private toRowErrorMessage(err: unknown): string {
     if (err instanceof HttpException) {
       const response = err.getResponse();

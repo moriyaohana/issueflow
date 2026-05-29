@@ -6,6 +6,7 @@ import { ProjectsService } from './projects.service';
 import { Project } from './entities/project.entity';
 import { UsersService } from '../users/users.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { assert } from 'console';
 
 describe('ProjectsService', () => {
   let service: ProjectsService;
@@ -24,11 +25,9 @@ describe('ProjectsService', () => {
       count: jest.fn(),
     };
     users = {
-      existsAndActive: jest.fn(),
+      assertActive: jest.fn().mockResolvedValue(undefined),
       findOptionalIncludingDeleted: jest.fn(),
     };
-    // softDelete is wrapped in a TX; the mock runs the callback inline against
-    // an EntityManager that hands back our `repo` for Project.
     dataSource = {
       transaction: jest.fn().mockImplementation(async (cb: any) =>
         cb({ getRepository: () => repo }),
@@ -47,18 +46,22 @@ describe('ProjectsService', () => {
   });
 
   it('400 when owner is soft-deleted', async () => {
-    users.existsAndActive.mockResolvedValueOnce(false);
+    users.assertActive.mockRejectedValueOnce(
+      new NotFoundException('User 1 not found'),
+    );
     users.findOptionalIncludingDeleted.mockResolvedValueOnce({
       id: 1,
       deletedAt: new Date(),
     });
     await expect(
       service.create({ name: 'p', description: 'd', ownerId: 1 }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('404 when owner does not exist', async () => {
-    users.existsAndActive.mockResolvedValueOnce(false);
+    users.assertActive.mockRejectedValueOnce(
+      new NotFoundException('User 999 not found'),
+    );
     users.findOptionalIncludingDeleted.mockResolvedValueOnce(null);
     await expect(
       service.create({ name: 'p', description: 'd', ownerId: 999 }),
@@ -66,7 +69,6 @@ describe('ProjectsService', () => {
   });
 
   it('persists when owner is active', async () => {
-    users.existsAndActive.mockResolvedValueOnce(true);
     const out = await service.create({ name: 'p', description: 'd', ownerId: 1 });
     expect(repo.save).toHaveBeenCalled();
     expect(out).toMatchObject({ name: 'p', description: 'd', ownerId: 1 });

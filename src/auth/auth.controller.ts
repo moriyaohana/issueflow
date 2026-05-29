@@ -26,10 +26,6 @@ export class AuthController {
     private readonly users: UsersService,
   ) {}
 
-  // Per-IP rate limit: 5 attempts / 60s. Tight enough to neuter credential
-  // stuffing, loose enough to absorb a human fat-fingering their password a
-  // few times. Applied route-locally (rather than globally) so the rest of
-  // the API — and the test suite's setup traffic — isn't affected.
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

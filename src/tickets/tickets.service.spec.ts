@@ -48,8 +48,7 @@ describe('TicketsService', () => {
   let txAuditRepo: any;
 
   beforeEach(async () => {
-    // Top-level repo: simulates `@VersionColumn` by bumping `version` on save
-    // so tests asserting v1→v2→v3 progression still see the increment.
+    // Simulate @VersionColumn so v1→v2→v3 progression assertions pass.
     repo = {
       create: jest.fn().mockImplementation((d) => ({ id: 1, ...d })),
       save: jest.fn().mockImplementation((t) => {
@@ -65,9 +64,6 @@ describe('TicketsService', () => {
       createQueryBuilder: jest.fn(),
     };
 
-    // Per-transaction repos. The QueryBuilder chain on the ticket repo is
-    // only exercised by `softDelete` (setLock + getOne); other tests use
-    // the top-level `repo`.
     txTicketRepo = {
       create: jest.fn().mockImplementation((d) => ({ id: 1, ...d })),
       save: jest.fn().mockImplementation((t) => {
@@ -93,8 +89,8 @@ describe('TicketsService', () => {
       }),
     };
 
-    projects = { existsAndActive: jest.fn().mockResolvedValue(true) };
-    users = { existsAndActive: jest.fn().mockResolvedValue(true) };
+    projects = { assertActive: jest.fn().mockResolvedValue(undefined) };
+    users = { assertActive: jest.fn().mockResolvedValue(undefined) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         TicketsService,
@@ -112,7 +108,9 @@ describe('TicketsService', () => {
   });
 
   it('reject create when project is soft-deleted', async () => {
-    projects.existsAndActive.mockResolvedValueOnce(false);
+    projects.assertActive.mockRejectedValueOnce(
+      new NotFoundException('Project 999 not found'),
+    );
     await expect(
       service.create({
         title: 't',
@@ -126,7 +124,9 @@ describe('TicketsService', () => {
   });
 
   it('reject create when assignee is soft-deleted', async () => {
-    users.existsAndActive.mockResolvedValueOnce(false);
+    users.assertActive.mockRejectedValueOnce(
+      new NotFoundException('User 5 not found'),
+    );
     await expect(
       service.create({
         title: 't',
@@ -137,7 +137,7 @@ describe('TicketsService', () => {
         projectId: 1,
         assigneeId: 5,
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('update on DONE ticket → 403', async () => {
@@ -205,14 +205,15 @@ describe('TicketsService', () => {
     );
     expect(updated.priority).toBe(TicketPriority.HIGH);
     expect(updated.isOverdue).toBe(false);
-    // Field is gone from the entity; the persisted row must not carry it.
     expect(
       (updated as unknown as Record<string, unknown>).autoEscalationPaused,
     ).toBe(undefined);
   });
 
   it('findAllForProject throws NotFoundException for an unknown project', async () => {
-    projects.existsAndActive.mockResolvedValueOnce(false);
+    projects.assertActive.mockRejectedValueOnce(
+      new NotFoundException('Project 999 not found'),
+    );
     await expect(service.findAllForProject(999)).rejects.toBeInstanceOf(
       NotFoundException,
     );

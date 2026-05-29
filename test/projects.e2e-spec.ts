@@ -97,7 +97,7 @@ describe('Projects (e2e)', () => {
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ name: 'orphan', description: 'd', ownerId: orphan.userId })
-      .expect(HttpStatus.BAD_REQUEST);
+      .expect(HttpStatus.NOT_FOUND);
   });
 
   it('GET /projects/deleted route resolves before GET /projects/:id', async () => {

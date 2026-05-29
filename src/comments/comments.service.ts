@@ -23,22 +23,13 @@ import { liveOnly } from '../common/utils/live-only';
 import { assertVersionMatches } from '../common/utils/version';
 import { entityNotFound } from '../common/errors/messages';
 
-/**
- * Minimal authenticated-caller shape used to authorise comment writes. We
- * accept the actor up front so the service can enforce IDOR + ownership
- * policy without reaching into request context.
- */
 export interface CommentActor {
   id: number;
   role: UserRole;
 }
 
-/**
- * Internal payload used between service and controller. The controller
- * projects to {@link CommentResponseDto} before returning so the wire shape
- * stays README-aligned; `version` is forwarded out-of-band via the `ETag`
- * header on write endpoints. Read endpoints drop it before responding.
- */
+// Carries `version` so the controller can emit the ETag header; the wire DTO
+// drops it.
 export interface CommentResponse {
   id: number;
   ticketId: number;
@@ -73,14 +64,7 @@ export class CommentsService {
     actorUserId: number | null = null,
   ): Promise<CommentResponse> {
     await this.tickets.assertActive(ticketId);
-    if (!(await this.users.existsAndActive(dto.authorId))) {
-      throw new BadRequestException(
-        `Author ${dto.authorId} is missing or deleted`,
-      );
-    }
-    // Comment + mentions land in one transaction so a crash between the two
-    // never leaves a comment with a stale or empty mention set. The audit row
-    // is part of the same TX (matches the `update` shape introduced below).
+    await this.users.assertActive(dto.authorId);
     const mentioned = await this.mentionParser.resolve(dto.content);
     const saved = await this.dataSource.transaction(async (manager) => {
       const commentRepo = manager.getRepository(Comment);
@@ -110,16 +94,6 @@ export class CommentsService {
     return this.toResponse(saved, mentioned);
   }
 
-  /**
-   * Update with HTTP-level optimistic concurrency.
-   *
-   * The caller passes the version they observed (via `If-Match`); we compare
-   * against the row's current `version`, bump it on save, and surface a
-   * 412 Precondition Failed if they raced another writer. The mention diff
-   * + comment save stay inside a transaction so the row and its mentions
-   * commit atomically, but no row lock is taken — concurrent writers fail
-   * loud at the version check rather than serialising on a lock.
-   */
   async update(
     routeTicketId: number,
     commentId: number,
@@ -136,16 +110,14 @@ export class CommentsService {
           entityNotFound(EntityType.COMMENT, commentId),
         );
       }
-      // Route-vs-row consistency: don't leak "comment 5 exists, just under a
-      // different ticket" — surface as 404 so a caller probing the wrong
-      // ticket can't enumerate comment ids.
+      // 404 on ticket mismatch to avoid leaking comment existence under a
+      // different ticket id.
       if (comment.ticketId !== routeTicketId) {
         throw new NotFoundException(
           entityNotFound(EntityType.COMMENT, commentId),
         );
       }
-      // Ownership: only the author or an ADMIN may mutate a comment. Internal
-      // callers pass `actor = null` (e.g. cascade flows) and are trusted.
+      // null actor = trusted internal caller (cascade flows).
       if (
         actor &&
         comment.authorId !== actor.id &&
@@ -156,7 +128,6 @@ export class CommentsService {
       assertVersionMatches(comment, expectedVersion, 'Comment');
 
       comment.content = dto.content;
-      // `@VersionColumn` bumps `version` on save; manual increment removed.
       await manager.getRepository(Comment).save(comment);
 
       const newMentions = await this.mentionParser.resolve(dto.content);
@@ -179,8 +150,6 @@ export class CommentsService {
           .getRepository(Mention)
           .insert(toAdd.map((userId) => ({ commentId, userId })));
       }
-      // Audit row is part of the same TX so the recorded UPDATE never lands
-      // for a save that ultimately rolled back (and vice versa).
       await this.audit.record({
         action: AuditAction.UPDATE,
         entityType: EntityType.COMMENT,
@@ -204,8 +173,7 @@ export class CommentsService {
         entityNotFound(EntityType.COMMENT, commentId),
       );
     }
-    // Route-vs-row consistency: a comment that belongs to a different ticket
-    // must look like a miss, not a 403/412 (which would leak existence).
+    // 404 on ticket mismatch to avoid leaking comment existence.
     if (comment.ticketId !== routeTicketId) {
       throw new NotFoundException(
         entityNotFound(EntityType.COMMENT, commentId),
@@ -220,10 +188,8 @@ export class CommentsService {
     }
     assertVersionMatches(comment, expectedVersion, 'Comment');
     await this.comments.softDelete(commentId);
-    // Mentions have no `deletedAt` column — Option A: hard-delete on cascade
-    // soft-delete and re-insert via the parser on restore. We mirror that
-    // here so the regular DELETE keeps mention rows from dangling at a
-    // hidden comment until restore.
+    // `mentions` has no `deletedAt`; hard-delete here and re-insert on restore
+    // so rows can't dangle at a hidden comment.
     await this.mentions.delete({ commentId });
     await this.audit.record({
       action: AuditAction.DELETE,
@@ -242,15 +208,6 @@ export class CommentsService {
     return Promise.all(rows.map(async (c) => this.toResponseWithLookup(c)));
   }
 
-  /**
-   * Paginated mention feed.
-   *
-   * The mention row itself has no timestamp, so we drive the order via the
-   * comment it points at: most recent comment first, with a tiebreak on
-   * `mention.id DESC` so that two comments sharing a `createdAt` (e.g. tests
-   * inserting in a tight loop) still page deterministically.
-   * The ORDER BY is applied before LIMIT/OFFSET so pagination is stable.
-   */
   async getMentionsForUser(
     userId: number,
     page = 1,
@@ -258,9 +215,8 @@ export class CommentsService {
   ): Promise<PaginatedMentions> {
     const take = Math.max(1, pageSize);
     const skip = (Math.max(1, page) - 1) * take;
-    // Use limit/offset instead of skip/take: TypeORM's skip/take wraps the
-    // query in a DISTINCT subquery that can't reference ORDER BY columns from
-    // joined tables ("column distinctAlias.c_createdAt does not exist").
+    // limit/offset (not skip/take): TypeORM's skip/take wraps the query in a
+    // DISTINCT subquery that can't ORDER BY joined columns.
     const baseQb = () =>
       this.mentions
         .createQueryBuilder('m')
@@ -280,8 +236,6 @@ export class CommentsService {
     const comments = await this.comments.find({
       where: { id: In(commentIds), deletedAt: IsNull() },
     });
-    // Preserve the ORDER BY from the join — index comments by id and walk the
-    // mention rows in their paginated order to produce the response list.
     const byId = new Map(comments.map((c) => [c.id, c]));
     const ordered: Comment[] = [];
     for (const m of mentionRows) {
@@ -294,15 +248,6 @@ export class CommentsService {
     return { data, total, page };
   }
 
-  /**
-   * Cascade hook fired by TicketsService.softDelete (and project cascade).
-   * Soft-deletes every live comment owned by the given tickets and stamps
-   * `deletedByCascade` so the restore path can identify them later.
-   *
-   * Mentions have no `deletedAt` column, so we hard-delete them here and
-   * re-derive the set from the comment content on restore (Option A). This
-   * avoids dangling mention rows that point at a hidden comment.
-   */
   async cascadeSoftDeleteComments(
     ticketIds: number[],
     actorUserId: number | null = null,
@@ -332,14 +277,6 @@ export class CommentsService {
     }
   }
 
-  /**
-   * Restore previously cascade-soft-deleted comments. Only rows flagged with
-   * `deletedByCascade` are resurrected; the flag is cleared on restore.
-   *
-   * Mentions were hard-deleted on cascade (see above) — we re-parse each
-   * restored comment's content and re-insert the live mention rows so the
-   * mention feed and `mentionedUsers` payloads recover correctly.
-   */
   async cascadeRestoreComments(
     ticketIds: number[],
     actorUserId: number | null = null,
@@ -358,8 +295,6 @@ export class CommentsService {
       .where('ticketId IN (:...ticketIds)', { ticketIds })
       .andWhere('deletedByCascade = TRUE')
       .execute();
-    // Re-derive mentions from the restored content via the existing parser
-    // (Option A): no `deletedAt` column on `mentions`, no schema churn.
     for (const r of rows) {
       const mentioned = await this.mentionParser.resolve(r.content);
       if (mentioned.length > 0) {

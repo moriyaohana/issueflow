@@ -32,12 +32,6 @@ export class AttachmentsService {
       size: number;
       buffer: Buffer;
     };
-    // The uploader and the audit-log actor are necessarily the same person —
-    // an upload is always performed by the authenticated user. Keeping a
-    // single `actorUserId` (the term used elsewhere in the audit pipeline)
-    // removes the previous `userId` / `actorUserId` redundancy at the call
-    // site and stamps the same id on `Attachment.uploadedBy` and the audit
-    // row.
     actorUserId: number;
   }): Promise<AttachmentMetadata> {
     await this.tickets.assertActive(args.ticketId);
@@ -91,12 +85,6 @@ export class AttachmentsService {
     });
   }
 
-  /**
-   * Cascade hook fired by ticket soft-delete.
-   * Soft-deletes live attachments owned by the given tickets and stamps
-   * `deletedByCascade` so the restore path knows which rows belong to this
-   * cascade event.
-   */
   async cascadeSoftDeleteAttachments(
     ticketIds: number[],
     actorUserId: number | null = null,
@@ -125,10 +113,6 @@ export class AttachmentsService {
     }
   }
 
-  /**
-   * Restore previously cascade-soft-deleted attachments. Only rows flagged
-   * with `deletedByCascade` come back; the flag is cleared on restore.
-   */
   async cascadeRestoreAttachments(
     ticketIds: number[],
     actorUserId: number | null = null,

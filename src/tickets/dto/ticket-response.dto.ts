@@ -3,12 +3,6 @@ import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { TicketPriority } from '../../common/enums/ticket-priority.enum';
 import { TicketType } from '../../common/enums/ticket-type.enum';
 
-/**
- * Wire shape for `GET /tickets`, `GET /tickets/:id`, and `POST /tickets`
- * responses. Matches the README documented shape exactly so internal columns
- * (`version`, `deletedByCascade`, `deletedAt`, `createdAt`, `updatedAt`) can
- * never leak. `version` is conveyed out-of-band via the `ETag` header.
- */
 export class TicketResponseDto {
   id: number;
   projectId: number;

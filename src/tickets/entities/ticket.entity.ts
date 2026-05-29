@@ -43,9 +43,8 @@ export class Ticket {
   @Column({ type: 'boolean', default: false })
   isOverdue: boolean;
 
-  // Managed by TypeORM: bumped automatically on every entity `save()`. Bulk
-  // QueryBuilder UPDATEs bypass the optimistic-lock save path and must bump
-  // the column manually via `version: () => 'version + 1'`.
+  // Bulk QueryBuilder UPDATEs bypass @VersionColumn and must bump manually
+  // via `version: () => 'version + 1'` (see EscalationService.runEscalation).
   @VersionColumn()
   version: number;
 

@@ -11,9 +11,6 @@ import { InvalidatedToken } from './entities/invalidated-token.entity';
 import { InvalidatedTokensService } from './invalidated-tokens.service';
 import { UsersModule } from '../users/users.module';
 
-// JwtAuthGuard is registered as APP_GUARD inside AppModule so its execution
-// order relative to RolesGuard is deterministic (JwtAuthGuard runs first so
-// `request.user` is populated before RolesGuard reads it).
 @Module({
   imports: [
     UsersModule,

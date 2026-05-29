@@ -29,12 +29,8 @@ export class User {
   @Column({ type: 'enum', enum: UserRole })
   role: UserRole;
 
-  // Defense-in-depth: `select: false` keeps the hash out of every find/QB
-  // result by default (even raw `repo.find()` paths that bypass
-  // `ClassSerializerInterceptor`). Any caller that legitimately needs it —
-  // i.e. `AuthService.login` — must opt-in via an explicit `select` /
-  // `addSelect('passwordHash')`. `@Exclude` is left in place as belt-and-
-  // braces for code paths that do project the column and then serialize.
+  // select: false keeps the hash out of default find/QB results; callers
+  // that need it (only AuthService.login) opt in via addSelect.
   @Exclude({ toPlainOnly: true })
   @Column({ type: 'varchar', length: 255, name: 'passwordHash', select: false })
   passwordHash: string;

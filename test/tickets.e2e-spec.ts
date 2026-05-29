@@ -63,8 +63,6 @@ describe('Tickets (e2e)', () => {
       .send({ status: 'IN_PROGRESS' })
       .expect(HttpStatus.OK);
     expect(updated.headers.etag).toBe('W/"2"');
-    // PATCH /tickets/:id is documented as an empty 200 body — the new
-    // version travels via `ETag` only. Re-fetch to verify the write.
     expect(updated.body.version).toBeUndefined();
     expect(updated.body.status).toBeUndefined();
     const afterUpdate = await request(ctx.app.getHttpServer())
@@ -134,8 +132,6 @@ describe('Tickets (e2e)', () => {
       .set('If-Match', 'W/"1"')
       .send({ status: 'DONE' })
       .expect(HttpStatus.OK);
-    // PATCH body is empty per README; the ETag header carries the new
-    // version. Re-fetch to confirm the status transition landed.
     expect(moved.headers.etag).toBe('W/"2"');
     const afterMove = await request(ctx.app.getHttpServer())
       .get(`/tickets/${created.body.id}`)
@@ -150,14 +146,14 @@ describe('Tickets (e2e)', () => {
       .expect(HttpStatus.FORBIDDEN);
   });
 
-  it('rejects assigneeId pointing to a soft-deleted user with 400', async () => {
+  it('rejects assigneeId pointing to a soft-deleted user with 404', async () => {
     const orphan = await ctx.obtainToken({ role: UserRole.DEVELOPER });
     await request(ctx.app.getHttpServer())
       .delete(`/users/${orphan.userId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(HttpStatus.OK);
     await createTicket({ assigneeId: orphan.userId }).expect(
-      HttpStatus.BAD_REQUEST,
+      HttpStatus.NOT_FOUND,
     );
   });
 
@@ -257,11 +253,6 @@ describe('Tickets (e2e)', () => {
       [t1.body.id, t2.body.id].includes(t.id),
     );
     expect(items.length).toBe(2);
-    // `deletedByCascade` is an internal column and is intentionally absent
-    // from the wire shape (README documents `{id,title,status,priority,
-    // type,projectId}` for the deleted-row variant); the assertion above
-    // — that both tickets show up in `/tickets/deleted` — is the observable
-    // proof that the cascade took effect.
     expect(items.every((t: any) => 'deletedByCascade' in t === false)).toBe(
       true,
     );
@@ -279,9 +270,6 @@ describe('Tickets (e2e)', () => {
       liveList.body.filter((t: any) => [t1.body.id, t2.body.id].includes(t.id))
         .length,
     ).toBe(2);
-    // `deletedByCascade` is no longer projected onto the wire (see above);
-    // restoring the project must just make the rows appear in the live
-    // listing again.
     expect(liveList.body.every((t: any) => 'deletedByCascade' in t === false))
       .toBe(true);
   });

@@ -21,7 +21,6 @@ describe('AttachmentsService', () => {
       softDelete: jest.fn().mockResolvedValue(undefined),
     };
     tickets = {
-      existsAndActive: jest.fn().mockResolvedValue(true),
       assertActive: jest.fn().mockResolvedValue(undefined),
     };
     const moduleRef = await Test.createTestingModule({

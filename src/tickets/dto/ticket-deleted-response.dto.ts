@@ -3,11 +3,6 @@ import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { TicketPriority } from '../../common/enums/ticket-priority.enum';
 import { TicketType } from '../../common/enums/ticket-type.enum';
 
-/**
- * Narrow wire shape for `GET /tickets/deleted`. README documents only six
- * fields for the deleted-row variant; the assignee / due-date / overdue /
- * version / cascade columns stay internal.
- */
 export class TicketDeletedResponseDto {
   id: number;
   title: string;
