@@ -410,4 +410,15 @@ export class TicketsService {
     });
     return count > 0;
   }
+
+  /**
+   * Canonical "ticket must exist and not be soft-deleted" guard. Shared by
+   * the comment/attachment/dependency entry points so the 404 message stays
+   * consistent and the check can be tightened (e.g. row lock) in one place.
+   */
+  async assertActive(id: number): Promise<void> {
+    if (!(await this.existsAndActive(id))) {
+      throw new NotFoundException(`Ticket ${id} not found`);
+    }
+  }
 }

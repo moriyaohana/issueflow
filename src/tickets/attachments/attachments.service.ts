@@ -35,9 +35,7 @@ export class AttachmentsService {
     userId: number;
     actorUserId: number | null;
   }): Promise<AttachmentMetadata> {
-    if (!(await this.tickets.existsAndActive(args.ticketId))) {
-      throw new NotFoundException(`Ticket ${args.ticketId} not found`);
-    }
+    await this.tickets.assertActive(args.ticketId);
     const saved = await this.attachments.save(
       this.attachments.create({
         ticketId: args.ticketId,
@@ -78,7 +76,7 @@ export class AttachmentsService {
     if (!attachment || attachment.ticketId !== ticketId) {
       throw new NotFoundException(`Attachment ${attachmentId} not found`);
     }
-    await this.attachments.delete({ id: attachmentId });
+    await this.attachments.softDelete({ id: attachmentId });
     await this.audit.record({
       action: AuditAction.DELETE,
       entityType: EntityType.ATTACHMENT,

@@ -20,6 +20,7 @@ import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { UserRole } from '../common/enums/user-role.enum';
+import { liveOnly } from '../common/utils/live-only';
 
 /**
  * Minimal authenticated-caller shape used to authorise comment writes. We
@@ -66,9 +67,7 @@ export class CommentsService {
     dto: CreateCommentDto,
     actorUserId: number | null = null,
   ): Promise<CommentResponse> {
-    if (!(await this.tickets.existsAndActive(ticketId))) {
-      throw new NotFoundException(`Ticket ${ticketId} not found`);
-    }
+    await this.tickets.assertActive(ticketId);
     if (!(await this.users.existsAndActive(dto.authorId))) {
       throw new BadRequestException(
         `Author ${dto.authorId} is missing or deleted`,
@@ -203,7 +202,12 @@ export class CommentsService {
         currentVersion: comment.version,
       });
     }
-    await this.comments.delete({ id: commentId });
+    await this.comments.softDelete(commentId);
+    // Mentions have no `deletedAt` column — Option A: hard-delete on cascade
+    // soft-delete and re-insert via the parser on restore. We mirror that
+    // here so the regular DELETE keeps mention rows from dangling at a
+    // hidden comment until restore.
+    await this.mentions.delete({ commentId });
     await this.audit.record({
       action: AuditAction.DELETE,
       entityType: EntityType.COMMENT,
@@ -213,9 +217,7 @@ export class CommentsService {
   }
 
   async findForTicket(ticketId: number): Promise<CommentResponse[]> {
-    if (!(await this.tickets.existsAndActive(ticketId))) {
-      throw new NotFoundException(`Ticket ${ticketId} not found`);
-    }
+    await this.tickets.assertActive(ticketId);
     const rows = await this.comments.find({
       where: { ticketId, deletedAt: IsNull() },
       order: { createdAt: 'ASC' },
@@ -279,6 +281,10 @@ export class CommentsService {
    * Cascade hook fired by TicketsService.softDelete (and project cascade).
    * Soft-deletes every live comment owned by the given tickets and stamps
    * `deletedByCascade` so the restore path can identify them later.
+   *
+   * Mentions have no `deletedAt` column, so we hard-delete them here and
+   * re-derive the set from the comment content on restore (Option A). This
+   * avoids dangling mention rows that point at a hidden comment.
    */
   async cascadeSoftDeleteComments(
     ticketIds: number[],
@@ -297,6 +303,7 @@ export class CommentsService {
       .where('ticketId IN (:...ticketIds)', { ticketIds })
       .andWhere('deletedAt IS NULL')
       .execute();
+    await this.mentions.delete({ commentId: In(rows.map((r) => r.id)) });
     for (const r of rows) {
       await this.audit.record({
         action: AuditAction.DELETE,
@@ -311,6 +318,10 @@ export class CommentsService {
   /**
    * Restore previously cascade-soft-deleted comments. Only rows flagged with
    * `deletedByCascade` are resurrected; the flag is cleared on restore.
+   *
+   * Mentions were hard-deleted on cascade (see above) — we re-parse each
+   * restored comment's content and re-insert the live mention rows so the
+   * mention feed and `mentionedUsers` payloads recover correctly.
    */
   async cascadeRestoreComments(
     ticketIds: number[],
@@ -319,7 +330,7 @@ export class CommentsService {
     if (ticketIds.length === 0) return;
     const rows = await this.comments.find({
       where: { ticketId: In(ticketIds), deletedByCascade: true },
-      select: ['id'],
+      select: ['id', 'content'],
       withDeleted: true,
     });
     if (rows.length === 0) return;
@@ -330,6 +341,16 @@ export class CommentsService {
       .where('ticketId IN (:...ticketIds)', { ticketIds })
       .andWhere('deletedByCascade = TRUE')
       .execute();
+    // Re-derive mentions from the restored content via the existing parser
+    // (Option A): no `deletedAt` column on `mentions`, no schema churn.
+    for (const r of rows) {
+      const mentioned = await this.mentionParser.resolve(r.content);
+      if (mentioned.length > 0) {
+        await this.mentions.insert(
+          mentioned.map((u) => ({ commentId: r.id, userId: u.id })),
+        );
+      }
+    }
     for (const r of rows) {
       await this.audit.record({
         action: AuditAction.RESTORE,
@@ -347,7 +368,9 @@ export class CommentsService {
     const rows = await this.mentions.find({ where: { commentId: comment.id } });
     const ids = rows.map((r) => r.userId);
     if (ids.length === 0) return this.toResponse(comment, []);
-    const users = await this.userRepo.find({ where: { id: In(ids) } });
+    const users = await this.userRepo.find({
+      where: liveOnly<User>({ id: In(ids) }),
+    });
     return this.toResponse(
       comment,
       users.map((u) => ({

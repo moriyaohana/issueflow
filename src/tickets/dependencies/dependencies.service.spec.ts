@@ -8,6 +8,7 @@ import {
 import { DependenciesService } from './dependencies.service';
 import { TicketDependency } from './entities/ticket-dependency.entity';
 import { Ticket } from '../entities/ticket.entity';
+import { TicketsService } from '../tickets.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { AuditAction } from '../../common/enums/audit-action.enum';
@@ -18,6 +19,7 @@ describe('DependenciesService', () => {
   let service: DependenciesService;
   let depsRepo: any;
   let ticketsRepo: any;
+  let ticketsService: { assertActive: jest.Mock };
   let audit: { record: jest.Mock };
 
   beforeEach(async () => {
@@ -32,12 +34,14 @@ describe('DependenciesService', () => {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
     };
+    ticketsService = { assertActive: jest.fn().mockResolvedValue(undefined) };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         DependenciesService,
         { provide: getRepositoryToken(TicketDependency), useValue: depsRepo },
         { provide: getRepositoryToken(Ticket), useValue: ticketsRepo },
+        { provide: TicketsService, useValue: ticketsService },
         { provide: AuditLogService, useValue: audit },
       ],
     }).compile();

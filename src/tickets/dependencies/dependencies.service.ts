@@ -8,11 +8,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import { TicketDependency } from './entities/ticket-dependency.entity';
 import { Ticket } from '../entities/ticket.entity';
+import { TicketsService } from '../tickets.service';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { actorOf } from '../../audit-log/audit-log.helpers';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
+import { liveOnly } from '../../common/utils/live-only';
 
 @Injectable()
 export class DependenciesService {
@@ -20,6 +22,7 @@ export class DependenciesService {
     @InjectRepository(TicketDependency)
     private readonly deps: Repository<TicketDependency>,
     @InjectRepository(Ticket) private readonly tickets: Repository<Ticket>,
+    private readonly ticketsService: TicketsService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -44,7 +47,7 @@ export class DependenciesService {
       );
     }
     const existing = await this.deps.findOne({
-      where: { ticketId, blockerId },
+      where: liveOnly<TicketDependency>({ ticketId, blockerId }),
     });
     if (existing) {
       throw new ConflictException('Dependency already exists');
@@ -62,16 +65,13 @@ export class DependenciesService {
   async list(
     ticketId: number,
   ): Promise<{ id: number; title: string; status: TicketStatus }[]> {
-    const ticket = await this.tickets.findOne({
-      where: { id: ticketId, deletedAt: IsNull() },
-    });
-    if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
+    await this.ticketsService.assertActive(ticketId);
     const rows = await this.deps.find({
-      where: { ticketId, deletedAt: IsNull() },
+      where: liveOnly<TicketDependency>({ ticketId }),
     });
     if (rows.length === 0) return [];
     const blockers = await this.tickets.find({
-      where: { id: In(rows.map((r) => r.blockerId)) },
+      where: liveOnly<Ticket>({ id: In(rows.map((r) => r.blockerId)) }),
     });
     return blockers.map((b) => ({
       id: b.id,
@@ -85,10 +85,12 @@ export class DependenciesService {
     blockerId: number,
     actorUserId: number | null = null,
   ): Promise<void> {
-    const ticket = await this.tickets.findOne({ where: { id: ticketId } });
+    const ticket = await this.tickets.findOne({
+      where: liveOnly<Ticket>({ id: ticketId }),
+    });
     if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
     const dep = await this.deps.findOne({
-      where: { ticketId, blockerId, deletedAt: IsNull() },
+      where: liveOnly<TicketDependency>({ ticketId, blockerId }),
     });
     if (!dep) throw new NotFoundException(`Dependency not found`);
     await this.deps.delete({ id: dep.id });
@@ -112,7 +114,7 @@ export class DependenciesService {
     });
     if (deps.length === 0) return;
     const blockers = await this.tickets.find({
-      where: { id: In(deps.map((d) => d.blockerId)) },
+      where: liveOnly<Ticket>({ id: In(deps.map((d) => d.blockerId)) }),
     });
     const unresolved = blockers
       .filter((b) => b.status !== TicketStatus.DONE)

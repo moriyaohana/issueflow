@@ -18,8 +18,12 @@ describe('AttachmentsService', () => {
       findOne: jest.fn(),
       find: jest.fn().mockResolvedValue([]),
       delete: jest.fn().mockResolvedValue(undefined),
+      softDelete: jest.fn().mockResolvedValue(undefined),
     };
-    tickets = { existsAndActive: jest.fn().mockResolvedValue(true) };
+    tickets = {
+      existsAndActive: jest.fn().mockResolvedValue(true),
+      assertActive: jest.fn().mockResolvedValue(undefined),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AttachmentsService,
@@ -35,7 +39,9 @@ describe('AttachmentsService', () => {
   });
 
   it('rejects when ticket is soft-deleted', async () => {
-    tickets.existsAndActive.mockResolvedValueOnce(false);
+    tickets.assertActive.mockRejectedValueOnce(
+      new NotFoundException('Ticket 99 not found'),
+    );
     await expect(
       service.upload({
         ticketId: 99,

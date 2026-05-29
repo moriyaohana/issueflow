@@ -42,6 +42,7 @@ describe('CommentsService', () => {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       delete: jest.fn().mockResolvedValue(undefined),
+      softDelete: jest.fn().mockResolvedValue(undefined),
     };
     mentionsRepo = {
       find: jest.fn().mockResolvedValue([]),
@@ -78,7 +79,10 @@ describe('CommentsService', () => {
     };
 
     mentionParser = { resolve: jest.fn().mockResolvedValue([]) };
-    tickets = { existsAndActive: jest.fn().mockResolvedValue(true) };
+    tickets = {
+      existsAndActive: jest.fn().mockResolvedValue(true),
+      assertActive: jest.fn().mockResolvedValue(undefined),
+    };
     users = { existsAndActive: jest.fn().mockResolvedValue(true) };
 
     const moduleRef = await Test.createTestingModule({
@@ -142,12 +146,12 @@ describe('CommentsService', () => {
     await expect(service.delete(1, 1, null, 1)).rejects.toBeInstanceOf(
       PreconditionFailedException,
     );
-    expect(commentsRepo.delete).not.toHaveBeenCalled();
+    expect(commentsRepo.softDelete).not.toHaveBeenCalled();
   });
 
   it('delete() succeeds when expectedVersion matches', async () => {
     commentsRepo.findOne.mockResolvedValueOnce(makeComment({ version: 2 }));
     await service.delete(1, 1, null, 2);
-    expect(commentsRepo.delete).toHaveBeenCalledWith({ id: 1 });
+    expect(commentsRepo.softDelete).toHaveBeenCalledWith(1);
   });
 });
