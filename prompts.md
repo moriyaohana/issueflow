@@ -430,8 +430,7 @@ follow.
 
 ## Output
 
-210 bullets, grouped into five `##` sections in
-[code-review-findings.md](code-review-findings.md):
+210 bullets, grouped into five `##` sections in a temporary code-review-findings.md:
 
 | Section | Bullets |
 | ------- | ------- |
