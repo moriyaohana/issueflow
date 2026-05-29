@@ -42,12 +42,11 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@CurrentUser() user: CurrentUserPayload): Promise<{ ok: true }> {
+  async logout(@CurrentUser() user: CurrentUserPayload): Promise<void> {
     if (!user?.jti) {
       throw new UnauthorizedException();
     }
     await this.auth.logout(user.jti, user.id, user.exp);
-    return { ok: true };
   }
 
   @Get('me')

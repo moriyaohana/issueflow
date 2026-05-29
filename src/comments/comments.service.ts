@@ -32,6 +32,12 @@ export interface CommentActor {
   role: UserRole;
 }
 
+/**
+ * Internal payload used between service and controller. The controller
+ * projects to {@link CommentResponseDto} before returning so the wire shape
+ * stays README-aligned; `version` is forwarded out-of-band via the `ETag`
+ * header on write endpoints. Read endpoints drop it before responding.
+ */
 export interface CommentResponse {
   id: number;
   ticketId: number;
@@ -39,8 +45,6 @@ export interface CommentResponse {
   content: string;
   mentionedUsers: { id: number; username: string; fullName: string }[];
   version: number;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface PaginatedMentions {
@@ -396,8 +400,6 @@ export class CommentsService {
         fullName: u.fullName,
       })),
       version: comment.version,
-      createdAt: comment.createdAt,
-      updatedAt: comment.updatedAt,
     };
   }
 }

@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { AttachmentsService } from './attachments.service';
+import { AttachmentResponseDto } from './dto/attachment-response.dto';
 import {
   CurrentUser,
   CurrentUserPayload,
@@ -39,7 +40,7 @@ export class AttachmentsController {
       limits: { fileSize: MAX_ATTACHMENT_SIZE },
     }),
   )
-  upload(
+  async upload(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @UploadedFile(
       new ParseFilePipe({
@@ -54,13 +55,23 @@ export class AttachmentsController {
     )
     file: Express.Multer.File,
     @CurrentUser() actor: CurrentUserPayload,
-  ) {
-    return this.attachments.upload({
+  ): Promise<AttachmentResponseDto> {
+    const saved = await this.attachments.upload({
       ticketId,
       file,
       userId: actor.id,
       actorUserId: actor.id,
     });
+    // README documents `{id, ticketId, filename, contentType}` only — the
+    // service returns the same shape via `AttachmentMetadata`, but routing
+    // through the DTO keeps the wire contract explicit and survives any
+    // future widening of the service-internal type.
+    const dto = new AttachmentResponseDto();
+    dto.id = saved.id;
+    dto.ticketId = saved.ticketId;
+    dto.filename = saved.filename;
+    dto.contentType = saved.contentType;
+    return dto;
   }
 
   @Delete(':attachmentId')

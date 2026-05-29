@@ -82,17 +82,25 @@ describe('Auto-escalation (e2e)', () => {
     expect(fetched.body.priority).toBe('MEDIUM');
     expect(fetched.headers.etag).toBe('W/"2"');
 
-    // Manual priority PATCH to HIGH; isOverdue must be false and the response
-    // shape must not contain autoEscalationPaused.
+    // Manual priority PATCH to HIGH. PATCH /tickets/:id is documented as an
+    // empty 200 body (the new version is conveyed via the `ETag` header), so
+    // we re-fetch the ticket to inspect the updated fields rather than
+    // asserting on the PATCH response body.
     const patched = await request(ctx.app.getHttpServer())
       .patch(`/tickets/${created.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .set('If-Match', fetched.headers.etag)
       .send({ priority: 'HIGH' })
       .expect(HttpStatus.OK);
-    expect(patched.body.priority).toBe('HIGH');
-    expect(patched.body.isOverdue).toBe(false);
-    expect(patched.body).not.toHaveProperty('autoEscalationPaused');
+    expect(patched.headers.etag).toBe('W/"3"');
+
+    const afterPatch = await request(ctx.app.getHttpServer())
+      .get(`/tickets/${created.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(HttpStatus.OK);
+    expect(afterPatch.body.priority).toBe('HIGH');
+    expect(afterPatch.body.isOverdue).toBe(false);
+    expect(afterPatch.body).not.toHaveProperty('autoEscalationPaused');
 
     // Re-run escalation: the ticket is still eligible (no pause flag), so HIGH
     // gets bumped to CRITICAL by the second cycle.

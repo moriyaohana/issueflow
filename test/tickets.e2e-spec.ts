@@ -63,8 +63,15 @@ describe('Tickets (e2e)', () => {
       .send({ status: 'IN_PROGRESS' })
       .expect(HttpStatus.OK);
     expect(updated.headers.etag).toBe('W/"2"');
+    // PATCH /tickets/:id is documented as an empty 200 body — the new
+    // version travels via `ETag` only. Re-fetch to verify the write.
     expect(updated.body.version).toBeUndefined();
-    expect(updated.body.status).toBe('IN_PROGRESS');
+    expect(updated.body.status).toBeUndefined();
+    const afterUpdate = await request(ctx.app.getHttpServer())
+      .get(`/tickets/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(HttpStatus.OK);
+    expect(afterUpdate.body.status).toBe('IN_PROGRESS');
 
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${id}`)
@@ -127,8 +134,14 @@ describe('Tickets (e2e)', () => {
       .set('If-Match', 'W/"1"')
       .send({ status: 'DONE' })
       .expect(HttpStatus.OK);
-    expect(moved.body.status).toBe('DONE');
+    // PATCH body is empty per README; the ETag header carries the new
+    // version. Re-fetch to confirm the status transition landed.
     expect(moved.headers.etag).toBe('W/"2"');
+    const afterMove = await request(ctx.app.getHttpServer())
+      .get(`/tickets/${created.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(HttpStatus.OK);
+    expect(afterMove.body.status).toBe('DONE');
     await request(ctx.app.getHttpServer())
       .patch(`/tickets/${created.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -198,7 +211,7 @@ describe('Tickets (e2e)', () => {
       .expect(HttpStatus.NOT_FOUND);
   });
 
-  it('cascading project soft-delete: tickets marked deletedByCascade and restored together', async () => {
+  it('cascading project soft-delete: tickets soft-deleted and restored together', async () => {
     const pj = await request(ctx.app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -244,7 +257,14 @@ describe('Tickets (e2e)', () => {
       [t1.body.id, t2.body.id].includes(t.id),
     );
     expect(items.length).toBe(2);
-    expect(items.every((t: any) => t.deletedByCascade === true)).toBe(true);
+    // `deletedByCascade` is an internal column and is intentionally absent
+    // from the wire shape (README documents `{id,title,status,priority,
+    // type,projectId}` for the deleted-row variant); the assertion above
+    // — that both tickets show up in `/tickets/deleted` — is the observable
+    // proof that the cascade took effect.
+    expect(items.every((t: any) => 'deletedByCascade' in t === false)).toBe(
+      true,
+    );
 
     await request(ctx.app.getHttpServer())
       .post(`/projects/${cascadeProjectId}/restore`)
@@ -259,8 +279,10 @@ describe('Tickets (e2e)', () => {
       liveList.body.filter((t: any) => [t1.body.id, t2.body.id].includes(t.id))
         .length,
     ).toBe(2);
-    expect(liveList.body.every((t: any) => t.deletedByCascade === false)).toBe(
-      true,
-    );
+    // `deletedByCascade` is no longer projected onto the wire (see above);
+    // restoring the project must just make the rows appear in the live
+    // listing again.
+    expect(liveList.body.every((t: any) => 'deletedByCascade' in t === false))
+      .toBe(true);
   });
 });

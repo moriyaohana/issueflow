@@ -8,13 +8,20 @@ import {
   ParseIntPipe,
   Query,
 } from '@nestjs/common';
-import { CommentsService, PaginatedMentions } from '../comments.service';
+import { CommentsService } from '../comments.service';
+import { CommentResponseDto } from '../dto/comment-response.dto';
 import { UsersService } from '../../users/users.service';
 import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+
+export interface PaginatedMentionsResponse {
+  data: CommentResponseDto[];
+  total: number;
+  page: number;
+}
 
 @Controller('users/:userId/mentions')
 export class MentionsController {
@@ -29,7 +36,7 @@ export class MentionsController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
     @CurrentUser() actor: CurrentUserPayload,
-  ): Promise<PaginatedMentions> {
+  ): Promise<PaginatedMentionsResponse> {
     // 403 before 404: a non-admin asking for another user's feed gets the
     // same response whether the target exists or not — avoids leaking
     // user-existence to unauthorised callers.
@@ -39,6 +46,17 @@ export class MentionsController {
     if (!(await this.users.existsAndActive(userId))) {
       throw new NotFoundException(`User ${userId} not found`);
     }
-    return this.comments.getMentionsForUser(userId, page, pageSize);
+    const result = await this.comments.getMentionsForUser(
+      userId,
+      page,
+      pageSize,
+    );
+    return {
+      data: result.data.map((c) =>
+        CommentResponseDto.fromEntity(c, c.mentionedUsers),
+      ),
+      total: result.total,
+      page: result.page,
+    };
   }
 }

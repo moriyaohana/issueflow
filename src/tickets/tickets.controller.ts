@@ -22,7 +22,8 @@ import { Response } from 'express';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
-import { Ticket } from './entities/ticket.entity';
+import { TicketResponseDto } from './dto/ticket-response.dto';
+import { TicketDeletedResponseDto } from './dto/ticket-deleted-response.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/user-role.enum';
 import {
@@ -48,10 +49,11 @@ export class TicketsController {
   // by Express's route trie (registration order matters here).
   @Get('deleted')
   @Roles(UserRole.ADMIN)
-  listDeleted(
+  async listDeleted(
     @Query('projectId', ParseIntPipe) projectId: number,
-  ): Promise<Ticket[]> {
-    return this.tickets.findAllDeletedForProject(projectId);
+  ): Promise<TicketDeletedResponseDto[]> {
+    const rows = await this.tickets.findAllDeletedForProject(projectId);
+    return rows.map(TicketDeletedResponseDto.fromEntity);
   }
 
   @Get('export')
@@ -99,33 +101,58 @@ export class TicketsController {
   }
 
   @Get()
-  list(@Query('projectId', ParseIntPipe) projectId: number): Promise<Ticket[]> {
-    return this.tickets.findAllForProject(projectId);
+  async list(
+    @Query('projectId', ParseIntPipe) projectId: number,
+  ): Promise<TicketResponseDto[]> {
+    const rows = await this.tickets.findAllForProject(projectId);
+    return rows.map(TicketResponseDto.fromEntity);
   }
 
   @Get(':ticketId')
-  get(@Param('ticketId', ParseIntPipe) ticketId: number): Promise<Ticket> {
-    return this.tickets.findOne(ticketId);
+  async get(
+    @Param('ticketId', ParseIntPipe) ticketId: number,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<TicketResponseDto> {
+    const ticket = await this.tickets.findOne(ticketId);
+    // Single-ticket reads must emit the ETag so clients can pick up the
+    // current version for subsequent If-Match writes. The interceptor only
+    // sees the DTO (no `version`), so we set the header explicitly here.
+    res.setHeader('ETag', `W/"${ticket.version}"`);
+    return TicketResponseDto.fromEntity(ticket);
   }
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(
+  async create(
     @Body() dto: CreateTicketDto,
     @CurrentUser() actor: CurrentUserPayload,
-  ): Promise<Ticket> {
-    return this.tickets.create(dto, actor.id);
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<TicketResponseDto> {
+    const ticket = await this.tickets.create(dto, actor.id);
+    res.setHeader('ETag', `W/"${ticket.version}"`);
+    return TicketResponseDto.fromEntity(ticket);
   }
 
   @Patch(':ticketId')
   @HttpCode(HttpStatus.OK)
-  update(
+  async update(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @Body() dto: UpdateTicketDto,
     @CurrentUser() actor: CurrentUserPayload,
     @IfMatch() expectedVersion: number,
-  ): Promise<Ticket> {
-    return this.tickets.update(ticketId, dto, actor.id, expectedVersion);
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    // README documents an empty 200 body; the new version is conveyed
+    // exclusively via the `ETag` header so clients can use it for the next
+    // If-Match round-trip. We set the header manually because the global
+    // ETagInterceptor only fires when the body itself carries `version`.
+    const saved = await this.tickets.update(
+      ticketId,
+      dto,
+      actor.id,
+      expectedVersion,
+    );
+    res.setHeader('ETag', `W/"${saved.version}"`);
   }
 
   @Delete(':ticketId')
@@ -141,10 +168,16 @@ export class TicketsController {
   @Post(':ticketId/restore')
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.ADMIN)
-  restore(
+  async restore(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @CurrentUser() actor: CurrentUserPayload,
-  ): Promise<Ticket> {
-    return this.tickets.restore(ticketId, actor.id);
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    // Post-restore version is the canonical fresh version a follow-up
+    // PATCH/DELETE must match against. Empty body per README; ETag header
+    // carries the version manually because the global interceptor expects
+    // a body object with a numeric `version` to fire.
+    const restored = await this.tickets.restore(ticketId, actor.id);
+    res.setHeader('ETag', `W/"${restored.version}"`);
   }
 }

@@ -47,12 +47,12 @@ export class UsersController {
   @Post('update/:userId')
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.ADMIN)
-  update(
+  async update(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() dto: UpdateUserDto,
     @CurrentUser() actor: CurrentUserPayload,
-  ): Promise<UserResponseDto> {
-    return this.users.update(userId, dto, actor);
+  ): Promise<void> {
+    await this.users.update(userId, dto, actor);
   }
 
   @Delete(':userId')

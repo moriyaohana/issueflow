@@ -13,7 +13,7 @@ import {
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
-import { Project } from './entities/project.entity';
+import { ProjectResponseDto } from './dto/project-response.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/user-role.enum';
 import {
@@ -27,37 +27,43 @@ export class ProjectsController {
 
   @Get('deleted')
   @Roles(UserRole.ADMIN)
-  listDeleted(): Promise<Project[]> {
-    return this.projects.findAllDeleted();
+  async listDeleted(): Promise<ProjectResponseDto[]> {
+    const rows = await this.projects.findAllDeleted();
+    return rows.map(ProjectResponseDto.fromEntity);
   }
 
   @Get()
-  list(): Promise<Project[]> {
-    return this.projects.findAll();
+  async list(): Promise<ProjectResponseDto[]> {
+    const rows = await this.projects.findAll();
+    return rows.map(ProjectResponseDto.fromEntity);
   }
 
   @Get(':projectId')
-  get(@Param('projectId', ParseIntPipe) projectId: number): Promise<Project> {
-    return this.projects.findOne(projectId);
+  async get(
+    @Param('projectId', ParseIntPipe) projectId: number,
+  ): Promise<ProjectResponseDto> {
+    const project = await this.projects.findOne(projectId);
+    return ProjectResponseDto.fromEntity(project);
   }
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(
+  async create(
     @Body() dto: CreateProjectDto,
     @CurrentUser() actor: CurrentUserPayload,
-  ): Promise<Project> {
-    return this.projects.create(dto, actor.id);
+  ): Promise<ProjectResponseDto> {
+    const project = await this.projects.create(dto, actor.id);
+    return ProjectResponseDto.fromEntity(project);
   }
 
   @Patch(':projectId')
   @HttpCode(HttpStatus.OK)
-  update(
+  async update(
     @Param('projectId', ParseIntPipe) projectId: number,
     @Body() dto: UpdateProjectDto,
     @CurrentUser() actor: CurrentUserPayload,
-  ): Promise<Project> {
-    return this.projects.update(projectId, dto, actor.id);
+  ): Promise<void> {
+    await this.projects.update(projectId, dto, actor.id);
   }
 
   @Delete(':projectId')
@@ -72,10 +78,10 @@ export class ProjectsController {
   @Post(':projectId/restore')
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.ADMIN)
-  restore(
+  async restore(
     @Param('projectId', ParseIntPipe) projectId: number,
     @CurrentUser() actor: CurrentUserPayload,
-  ): Promise<Project> {
-    return this.projects.restore(projectId, actor.id);
+  ): Promise<void> {
+    await this.projects.restore(projectId, actor.id);
   }
 }

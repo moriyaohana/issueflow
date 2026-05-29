@@ -201,12 +201,19 @@ export class UsersService {
   /**
    * Case-insensitive lookup for @mention parsing. Soft-deleted users are
    * excluded so we never persist mentions pointing at hidden accounts.
+   *
+   * Projection is narrowed to the wire-safe `MentionParser` shape so even
+   * a future caller that forgets to map through `ResolvedMention` cannot
+   * leak `email` / `passwordHash` over the wire.
    */
-  async findByUsernamesCaseInsensitive(usernames: string[]): Promise<User[]> {
+  async findByUsernamesCaseInsensitive(
+    usernames: string[],
+  ): Promise<Pick<User, 'id' | 'username' | 'fullName'>[]> {
     if (usernames.length === 0) return [];
     const lower = usernames.map((u) => u.toLowerCase());
     return this.users
       .createQueryBuilder('u')
+      .select(['u.id', 'u.username', 'u.fullName'])
       .where('LOWER(u.username) IN (:...lower)', { lower })
       .andWhere('u.deletedAt IS NULL')
       .getMany();
