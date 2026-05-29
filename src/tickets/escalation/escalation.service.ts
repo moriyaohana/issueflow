@@ -20,8 +20,6 @@ export class EscalationService {
    * Sweep overdue tickets and either bump priority one step (LOW→MEDIUM→
    * HIGH→CRITICAL) or, if already CRITICAL, flag `isOverdue = true`.
    *
-   * - `autoEscalationPaused = true` opts a ticket out (user has taken manual
-   *   control of priority).
    * - Each save bumps `version` so racing client PATCHes 409 cleanly.
    * - Soft-deleted and DONE tickets are excluded.
    * - At CRITICAL the operation is idempotent: only update when `isOverdue`
@@ -32,7 +30,6 @@ export class EscalationService {
       where: {
         dueDate: LessThan(new Date()) as unknown as Date,
         status: Not(TicketStatus.DONE) as unknown as TicketStatus,
-        autoEscalationPaused: false,
         deletedAt: IsNull(),
       },
     });

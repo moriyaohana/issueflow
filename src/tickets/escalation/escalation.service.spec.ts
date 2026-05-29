@@ -6,7 +6,7 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { TicketPriority } from '../../common/enums/ticket-priority.enum';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
 
-function makeTicket(p: Partial<Ticket>): Ticket {
+function makeTicket(overrides: Partial<Ticket>): Ticket {
   return {
     id: 1,
     title: 't',
@@ -18,13 +18,12 @@ function makeTicket(p: Partial<Ticket>): Ticket {
     assigneeId: null,
     dueDate: new Date(Date.now() - 60_000),
     isOverdue: false,
-    autoEscalationPaused: false,
     version: 1,
     deletedByCascade: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
-    ...p,
+    ...overrides,
   } as Ticket;
 }
 

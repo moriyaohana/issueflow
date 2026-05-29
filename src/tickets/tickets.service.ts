@@ -54,16 +54,16 @@ export class TicketsService {
     private readonly audit: AuditLogService,
   ) {}
 
-  registerCascadeTarget(t: Partial<TicketCascadeTarget>): void {
-    this.cascade = { ...this.cascade, ...t };
+  registerCascadeTarget(cascade: Partial<TicketCascadeTarget>): void {
+    this.cascade = { ...this.cascade, ...cascade };
   }
 
-  registerBlockersResolver(b: BlockersResolver): void {
-    this.blockers = b;
+  registerBlockersResolver(blockersResolver: BlockersResolver): void {
+    this.blockers = blockersResolver;
   }
 
-  registerAutoAssignResolver(a: AutoAssignResolver): void {
-    this.autoAssign = a;
+  registerAutoAssignResolver(autoAssignResolver: AutoAssignResolver): void {
+    this.autoAssign = autoAssignResolver;
   }
 
   async create(
@@ -101,7 +101,6 @@ export class TicketsService {
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
       version: 1,
       isOverdue: false,
-      autoEscalationPaused: false,
       deletedByCascade: false,
     });
     const saved = await this.tickets.save(ticket);
@@ -128,11 +127,22 @@ export class TicketsService {
     return saved;
   }
 
-  findAllForProject(projectId: number): Promise<Ticket[]> {
+  async findAllForProject(projectId: number): Promise<Ticket[]> {
+    const active = await this.projects.existsAndActive(projectId);
+    if (!active) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
     return this.tickets.find({ where: { projectId, deletedAt: IsNull() } });
   }
 
-  findAllDeletedForProject(projectId: number): Promise<Ticket[]> {
+  async findAllDeletedForProject(projectId: number): Promise<Ticket[]> {
+    // Forensics endpoint: allow listing the deleted tickets of a soft-deleted
+    // project (so the cascade can be inspected), but still reject totally
+    // unknown projects.
+    const exists = await this.projects.existsIncludingDeleted(projectId);
+    if (!exists) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
     return this.tickets.find({
       where: { projectId, deletedAt: Not(IsNull()) },
       withDeleted: true,
@@ -154,7 +164,9 @@ export class TicketsService {
    *   3. optimistic-locking version match via If-Match header (412)
    *   4. forward-only status progression (400)
    *   5. blockers must be DONE before status → DONE (filled in Agent 8)
-   *   6. user-supplied priority pauses auto-escalation and clears isOverdue
+   *   6. user-supplied priority clears isOverdue so the user's reclassification
+   *      wins until the next escalation cycle re-evaluates the ticket; it does
+   *      NOT opt the ticket out of escalation
    *   7. version increments on every successful save
    *
    * `expectedVersion` is the integer parsed from the `If-Match` request
@@ -214,11 +226,10 @@ export class TicketsService {
     if (dto.type !== undefined) ticket.type = dto.type;
     if (dto.dueDate !== undefined) ticket.dueDate = new Date(dto.dueDate);
     if (dto.priority !== undefined) {
-      // A manual priority change pauses auto-escalation for the ticket and
-      // clears the overdue flag so the user's classification wins until the
-      // next time they explicitly opt in.
+      // A manual priority change clears the overdue flag so the user's
+      // reclassification wins until the next escalation cycle re-evaluates
+      // the ticket. The ticket remains eligible for auto-escalation.
       ticket.priority = dto.priority;
-      ticket.autoEscalationPaused = true;
       ticket.isOverdue = false;
     }
     ticket.version += 1;

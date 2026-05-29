@@ -28,7 +28,6 @@ function makeTicket(over: Partial<Ticket> = {}): Ticket {
     assigneeId: null,
     dueDate: null,
     isOverdue: false,
-    autoEscalationPaused: false,
     version: 1,
     deletedByCascade: false,
     createdAt: new Date(),
@@ -152,10 +151,9 @@ describe('TicketsService', () => {
     expect(second.title).toBe('second');
   });
 
-  it('manual priority change pauses escalation and clears isOverdue', async () => {
+  it('manual priority change clears isOverdue without pausing escalation', async () => {
     const ticket = makeTicket({
       priority: TicketPriority.LOW,
-      autoEscalationPaused: false,
       isOverdue: true,
     });
     repo.findOne.mockResolvedValueOnce(ticket);
@@ -166,8 +164,18 @@ describe('TicketsService', () => {
       1,
     );
     expect(updated.priority).toBe(TicketPriority.HIGH);
-    expect(updated.autoEscalationPaused).toBe(true);
     expect(updated.isOverdue).toBe(false);
+    // Field is gone from the entity; the persisted row must not carry it.
+    expect(
+      (updated as unknown as Record<string, unknown>).autoEscalationPaused,
+    ).toBe(undefined);
+  });
+
+  it('findAllForProject throws NotFoundException for an unknown project', async () => {
+    projects.existsAndActive.mockResolvedValueOnce(false);
+    await expect(service.findAllForProject(999)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('blocked DONE transition surfaces an error from the resolver', async () => {

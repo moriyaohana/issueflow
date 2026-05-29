@@ -20,8 +20,14 @@ import { ActorType } from '../common/enums/actor-type.enum';
  * without a hard module dependency.
  */
 export interface ProjectCascadeHandler {
-  cascadeSoftDeleteForProject(projectId: number, actorUserId: number | null): Promise<void>;
-  cascadeRestoreForProject(projectId: number, actorUserId: number | null): Promise<void>;
+  cascadeSoftDeleteForProject(
+    projectId: number,
+    actorUserId: number | null,
+  ): Promise<void>;
+  cascadeRestoreForProject(
+    projectId: number,
+    actorUserId: number | null,
+  ): Promise<void>;
 }
 
 @Injectable()
@@ -38,7 +44,10 @@ export class ProjectsService {
     this.cascadeHandler = handler;
   }
 
-  async create(dto: CreateProjectDto, actorUserId: number | null = null): Promise<Project> {
+  async create(
+    dto: CreateProjectDto,
+    actorUserId: number | null = null,
+  ): Promise<Project> {
     const ownerActive = await this.users.existsAndActive(dto.ownerId);
     if (!ownerActive) {
       // Distinguish "owner missing" (404) from "owner soft-deleted" (400).
@@ -104,7 +113,10 @@ export class ProjectsService {
     return saved;
   }
 
-  async softDelete(id: number, actorUserId: number | null = null): Promise<void> {
+  async softDelete(
+    id: number,
+    actorUserId: number | null = null,
+  ): Promise<void> {
     const project = await this.findOne(id);
     await this.projects.softRemove(project);
     await this.audit.record({
@@ -115,11 +127,17 @@ export class ProjectsService {
       actor: ActorType.USER,
     });
     if (this.cascadeHandler) {
-      await this.cascadeHandler.cascadeSoftDeleteForProject(project.id, actorUserId);
+      await this.cascadeHandler.cascadeSoftDeleteForProject(
+        project.id,
+        actorUserId,
+      );
     }
   }
 
-  async restore(id: number, actorUserId: number | null = null): Promise<Project> {
+  async restore(
+    id: number,
+    actorUserId: number | null = null,
+  ): Promise<Project> {
     const project = await this.projects.findOne({
       where: { id },
       withDeleted: true,
@@ -137,13 +155,32 @@ export class ProjectsService {
       actor: ActorType.USER,
     });
     if (this.cascadeHandler) {
-      await this.cascadeHandler.cascadeRestoreForProject(project.id, actorUserId);
+      await this.cascadeHandler.cascadeRestoreForProject(
+        project.id,
+        actorUserId,
+      );
     }
     return this.projects.findOne({ where: { id } }) as Promise<Project>;
   }
 
   async existsAndActive(id: number): Promise<boolean> {
-    const count = await this.projects.count({ where: { id, deletedAt: IsNull() } });
+    const count = await this.projects.count({
+      where: { id, deletedAt: IsNull() },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Like {@link existsAndActive} but also returns true for soft-deleted
+   * projects. Used by forensics-style endpoints (e.g. listing the cascade
+   * trail under a soft-deleted project) that still need to reject totally
+   * unknown FK ids.
+   */
+  async existsIncludingDeleted(id: number): Promise<boolean> {
+    const count = await this.projects.count({
+      where: { id },
+      withDeleted: true,
+    });
     return count > 0;
   }
 }

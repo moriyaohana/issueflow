@@ -42,9 +42,6 @@ export class Ticket {
   @Column({ type: 'boolean', default: false })
   isOverdue: boolean;
 
-  @Column({ type: 'boolean', default: false })
-  autoEscalationPaused: boolean;
-
   @Column({ type: 'int', default: 1 })
   version: number;
 

@@ -6,9 +6,14 @@ import { AutoAssignService } from './auto-assign.service';
 import { WorkloadController } from './workload.controller';
 import { TicketsModule } from '../tickets.module';
 import { TicketsService } from '../tickets.service';
+import { ProjectsModule } from '../../projects/projects.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Ticket]), TicketsModule],
+  imports: [
+    TypeOrmModule.forFeature([User, Ticket]),
+    TicketsModule,
+    ProjectsModule,
+  ],
   providers: [AutoAssignService],
   controllers: [WorkloadController],
   exports: [AutoAssignService],

@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Ticket } from '../entities/ticket.entity';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
+import { ProjectsService } from '../../projects/projects.service';
 
 export interface WorkloadEntry {
   userId: number;
@@ -17,6 +18,7 @@ export class AutoAssignService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Ticket) private readonly tickets: Repository<Ticket>,
+    private readonly projects: ProjectsService,
   ) {}
 
   /**
@@ -36,7 +38,9 @@ export class AutoAssignService {
         't."assigneeId" = u.id AND t."projectId" = :projectId AND t.status <> :done AND t."deletedAt" IS NULL',
         { projectId, done: TicketStatus.DONE },
       )
-      .where('u.role = :role AND u."deletedAt" IS NULL', { role: UserRole.DEVELOPER })
+      .where('u.role = :role AND u."deletedAt" IS NULL', {
+        role: UserRole.DEVELOPER,
+      })
       .groupBy('u.id')
       .addGroupBy('u."createdAt"')
       .select('u.id', 'id')
@@ -51,6 +55,10 @@ export class AutoAssignService {
   }
 
   async getProjectWorkload(projectId: number): Promise<WorkloadEntry[]> {
+    const active = await this.projects.existsAndActive(projectId);
+    if (!active) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
     const rows = await this.users
       .createQueryBuilder('u')
       .leftJoin(
@@ -59,7 +67,9 @@ export class AutoAssignService {
         't."assigneeId" = u.id AND t."projectId" = :projectId AND t.status <> :done AND t."deletedAt" IS NULL',
         { projectId, done: TicketStatus.DONE },
       )
-      .where('u.role = :role AND u."deletedAt" IS NULL', { role: UserRole.DEVELOPER })
+      .where('u.role = :role AND u."deletedAt" IS NULL', {
+        role: UserRole.DEVELOPER,
+      })
       .groupBy('u.id')
       .addGroupBy('u."createdAt"')
       .addGroupBy('u.username')
@@ -68,14 +78,19 @@ export class AutoAssignService {
       .addSelect('COUNT(t.id)', 'openTicketCount')
       .orderBy('"openTicketCount"', 'ASC')
       .addOrderBy('u."createdAt"', 'ASC')
-      .getRawMany<{ userId: string | number; username: string; openTicketCount: string | number }>();
-    return rows.map((r) => ({
-      userId: typeof r.userId === 'string' ? parseInt(r.userId, 10) : r.userId,
-      username: r.username,
+      .getRawMany<{
+        userId: string | number;
+        username: string;
+        openTicketCount: string | number;
+      }>();
+    return rows.map((row) => ({
+      userId:
+        typeof row.userId === 'string' ? parseInt(row.userId, 10) : row.userId,
+      username: row.username,
       openTicketCount:
-        typeof r.openTicketCount === 'string'
-          ? parseInt(r.openTicketCount, 10)
-          : r.openTicketCount,
+        typeof row.openTicketCount === 'string'
+          ? parseInt(row.openTicketCount, 10)
+          : row.openTicketCount,
     }));
   }
 }

@@ -1,12 +1,15 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { NotFoundException } from '@nestjs/common';
 import { AutoAssignService } from './auto-assign.service';
 import { User } from '../../users/entities/user.entity';
 import { Ticket } from '../entities/ticket.entity';
+import { ProjectsService } from '../../projects/projects.service';
 
 describe('AutoAssignService', () => {
   let service: AutoAssignService;
   let usersRepo: any;
+  let projects: any;
   let qb: any;
 
   beforeEach(async () => {
@@ -24,11 +27,13 @@ describe('AutoAssignService', () => {
       getRawMany: jest.fn(),
     };
     usersRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
+    projects = { existsAndActive: jest.fn().mockResolvedValue(true) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AutoAssignService,
         { provide: getRepositoryToken(User), useValue: usersRepo },
         { provide: getRepositoryToken(Ticket), useValue: {} },
+        { provide: ProjectsService, useValue: projects },
       ],
     }).compile();
     service = moduleRef.get(AutoAssignService);
@@ -44,6 +49,13 @@ describe('AutoAssignService', () => {
     qb.getRawOne.mockResolvedValueOnce({ id: '7', load: '0' });
     const id = await service.pickAssignee(1);
     expect(id).toBe(7);
+  });
+
+  it('getProjectWorkload throws NotFoundException for an unknown project', async () => {
+    projects.existsAndActive.mockResolvedValueOnce(false);
+    await expect(service.getProjectWorkload(999)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('getProjectWorkload coerces counts to numbers and preserves order', async () => {

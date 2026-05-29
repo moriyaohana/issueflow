@@ -180,6 +180,22 @@ describe('Tickets (e2e)', () => {
     expect(live2.body.find((t: any) => t.id === id)).toBeTruthy();
   });
 
+  it('POST /tickets/import with non-integer projectId returns 400', async () => {
+    await request(ctx.app.getHttpServer())
+      .post('/tickets/import')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .field('projectId', 'not-a-number')
+      .attach('file', Buffer.from('title\nx\n'), 'tickets.csv')
+      .expect(HttpStatus.BAD_REQUEST);
+  });
+
+  it('GET /tickets?projectId=<unknown> returns 404', async () => {
+    await request(ctx.app.getHttpServer())
+      .get('/tickets?projectId=999999')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(HttpStatus.NOT_FOUND);
+  });
+
   it('cascading project soft-delete: tickets marked deletedByCascade and restored together', async () => {
     const pj = await request(ctx.app.getHttpServer())
       .post('/projects')

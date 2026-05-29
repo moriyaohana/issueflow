@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -87,13 +86,9 @@ export class TicketsController {
   )
   async import(
     @UploadedFile() file: Express.Multer.File,
-    @Body('projectId') projectIdRaw: string,
+    @Body('projectId', ParseIntPipe) projectId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<ImportResult> {
-    const projectId = parseInt(projectIdRaw, 10);
-    if (!Number.isInteger(projectId) || projectId <= 0) {
-      throw new BadRequestException('projectId must be a positive integer');
-    }
     return this.importSvc.import(projectId, file, actor?.id ?? null);
   }
 
