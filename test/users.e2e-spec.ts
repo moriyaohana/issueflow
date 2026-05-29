@@ -119,11 +119,11 @@ describe('Users (e2e)', () => {
       .post('/users')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        username: 'short',
-        email: 'short@example.com',
-        fullName: 'Short',
+        username: 'empty-pw',
+        email: 'empty@example.com',
+        fullName: 'Empty Password',
         role: 'DEVELOPER',
-        password: 'short',
+        password: '',
       })
       .expect(400);
   });
