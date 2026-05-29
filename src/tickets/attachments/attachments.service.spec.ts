@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { AttachmentsService } from './attachments.service';
 import { Attachment } from './entities/attachment.entity';
 import { TicketsService } from '../tickets.service';
@@ -25,26 +25,13 @@ describe('AttachmentsService', () => {
         AttachmentsService,
         { provide: getRepositoryToken(Attachment), useValue: repo },
         { provide: TicketsService, useValue: tickets },
-        { provide: AuditLogService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: AuditLogService,
+          useValue: { record: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
     service = moduleRef.get(AttachmentsService);
-  });
-
-  it('rejects unsupported mime type', async () => {
-    await expect(
-      service.upload({
-        ticketId: 1,
-        file: {
-          originalname: 'x.exe',
-          mimetype: 'application/x-msdownload',
-          size: 10,
-          buffer: Buffer.alloc(10),
-        },
-        userId: 1,
-        actorUserId: 1,
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects when ticket is soft-deleted', async () => {
@@ -88,6 +75,8 @@ describe('AttachmentsService', () => {
 
   it('rejects delete when attachment belongs to a different ticket', async () => {
     repo.findOne.mockResolvedValueOnce({ id: 9, ticketId: 1 });
-    await expect(service.delete(2, 9)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.delete(2, 9)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

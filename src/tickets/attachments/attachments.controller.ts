@@ -1,10 +1,11 @@
 import {
-  BadRequestException,
   Controller,
   Delete,
+  FileTypeValidator,
   HttpCode,
   HttpStatus,
   Param,
+  ParseFilePipe,
   ParseIntPipe,
   Post,
   UploadedFile,
@@ -13,10 +14,18 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { AttachmentsService } from './attachments.service';
-import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../../common/decorators/current-user.decorator';
 import { ALLOWED_ATTACHMENT_MIME_TYPES } from '../../common/enums/attachment-mime-type.enum';
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+// Allowlist values are static enum strings (e.g. "image/png"); the only regex
+// metachar in scope is "/", so a plain alternation is safe — no escaping needed.
+const ALLOWED_ATTACHMENT_MIME_TYPE_REGEX = new RegExp(
+  `^(?:${ALLOWED_ATTACHMENT_MIME_TYPES.join('|')})$`,
+);
 
 @Controller('tickets/:ticketId/attachments')
 export class AttachmentsController {
@@ -28,15 +37,22 @@ export class AttachmentsController {
     FileInterceptor('file', {
       storage: memoryStorage(),
       limits: { fileSize: MAX_ATTACHMENT_SIZE },
-      fileFilter: (_req, file, cb) => {
-        const ok = (ALLOWED_ATTACHMENT_MIME_TYPES as string[]).includes(file.mimetype);
-        cb(ok ? null : new BadRequestException('Unsupported file type'), ok);
-      },
     }),
   )
   upload(
     @Param('ticketId', ParseIntPipe) ticketId: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new ParseFilePipe({
+        fileIsRequired: true,
+        validators: [
+          new FileTypeValidator({
+            fileType: ALLOWED_ATTACHMENT_MIME_TYPE_REGEX,
+            skipMagicNumbersValidation: true,
+          }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
     @CurrentUser() actor: CurrentUserPayload,
   ) {
     return this.attachments.upload({

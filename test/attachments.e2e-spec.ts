@@ -1,4 +1,5 @@
 import * as request from 'supertest';
+import { HttpStatus } from '@nestjs/common';
 import { createTestApp, TestAppContext } from './test-app.factory';
 import { UserRole } from '../src/common/enums/user-role.enum';
 
@@ -76,6 +77,13 @@ describe('Attachments (e2e)', () => {
       .expect(400);
   });
 
+  it('upload with no file returns 400', async () => {
+    await request(ctx.app.getHttpServer())
+      .post(`/tickets/${ticketId}/attachments`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(HttpStatus.BAD_REQUEST);
+  });
+
   it('cascading hard-delete on ticket soft-delete: deleting the ticket purges its attachments', async () => {
     const project = await request(ctx.app.getHttpServer())
       .post('/projects')
@@ -97,7 +105,10 @@ describe('Attachments (e2e)', () => {
     const upload = await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticket.body.id}/attachments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .attach('file', Buffer.from('hello'), { filename: 'a.txt', contentType: 'text/plain' })
+      .attach('file', Buffer.from('hello'), {
+        filename: 'a.txt',
+        contentType: 'text/plain',
+      })
       .expect(200);
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${ticket.body.id}`)
@@ -110,6 +121,8 @@ describe('Attachments (e2e)', () => {
       )
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    expect(audit.body.find((r: any) => r.metadata?.cascade === true)).toBeTruthy();
+    expect(
+      audit.body.find((r: any) => r.metadata?.cascade === true),
+    ).toBeTruthy();
   });
 });

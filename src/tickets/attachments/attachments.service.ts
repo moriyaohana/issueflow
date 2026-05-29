@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Attachment } from './entities/attachment.entity';
@@ -11,7 +7,6 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
 import { ActorType } from '../../common/enums/actor-type.enum';
-import { ALLOWED_ATTACHMENT_MIME_TYPES } from '../../common/enums/attachment-mime-type.enum';
 
 export interface AttachmentMetadata {
   id: number;
@@ -23,23 +18,23 @@ export interface AttachmentMetadata {
 @Injectable()
 export class AttachmentsService {
   constructor(
-    @InjectRepository(Attachment) private readonly attachments: Repository<Attachment>,
+    @InjectRepository(Attachment)
+    private readonly attachments: Repository<Attachment>,
     private readonly tickets: TicketsService,
     private readonly audit: AuditLogService,
   ) {}
 
   async upload(args: {
     ticketId: number;
-    file: { originalname: string; mimetype: string; size: number; buffer: Buffer };
+    file: {
+      originalname: string;
+      mimetype: string;
+      size: number;
+      buffer: Buffer;
+    };
     userId: number;
     actorUserId: number | null;
   }): Promise<AttachmentMetadata> {
-    if (!args.file) {
-      throw new BadRequestException('file is required');
-    }
-    if (!(ALLOWED_ATTACHMENT_MIME_TYPES as string[]).includes(args.file.mimetype)) {
-      throw new BadRequestException(`Unsupported content type: ${args.file.mimetype}`);
-    }
     if (!(await this.tickets.existsAndActive(args.ticketId))) {
       throw new NotFoundException(`Ticket ${args.ticketId} not found`);
     }
@@ -59,7 +54,11 @@ export class AttachmentsService {
       entityId: saved.id,
       performedBy: args.actorUserId,
       actor: ActorType.USER,
-      metadata: { ticketId: args.ticketId, filename: saved.filename, sizeBytes: saved.sizeBytes },
+      metadata: {
+        ticketId: args.ticketId,
+        filename: saved.filename,
+        sizeBytes: saved.sizeBytes,
+      },
     });
     return {
       id: saved.id,
@@ -74,7 +73,9 @@ export class AttachmentsService {
     attachmentId: number,
     actorUserId: number | null = null,
   ): Promise<void> {
-    const attachment = await this.attachments.findOne({ where: { id: attachmentId } });
+    const attachment = await this.attachments.findOne({
+      where: { id: attachmentId },
+    });
     if (!attachment || attachment.ticketId !== ticketId) {
       throw new NotFoundException(`Attachment ${attachmentId} not found`);
     }
