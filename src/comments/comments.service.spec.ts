@@ -57,7 +57,13 @@ describe('CommentsService', () => {
     // repos used in the service body.
     const txCommentRepo = {
       findOne: jest.fn(),
-      save: jest.fn().mockImplementation((c) => Promise.resolve(c)),
+      // Simulate `@VersionColumn`: TypeORM bumps `version` on every entity
+      // `save()`. The manual `comment.version += 1` was removed when the
+      // column was switched, so the test repo has to model the bump.
+      save: jest.fn().mockImplementation((c) => {
+        c.version = (c.version ?? 0) + 1;
+        return Promise.resolve(c);
+      }),
     };
     const txMentionRepo = {
       find: jest.fn().mockResolvedValue([]),

@@ -26,7 +26,8 @@ export class AutoAssignModule implements OnModuleInit {
 
   onModuleInit(): void {
     this.tickets.registerAutoAssignResolver({
-      pickAssignee: (projectId) => this.auto.pickAssignee(projectId),
+      pickAssignee: (projectId, manager) =>
+        this.auto.pickAssignee(projectId, manager),
     });
   }
 }

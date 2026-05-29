@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import {
   BadRequestException,
   ConflictException,
@@ -10,6 +10,7 @@ import { TicketDependency } from './entities/ticket-dependency.entity';
 import { Ticket } from '../entities/ticket.entity';
 import { TicketsService } from '../tickets.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AuditLog } from '../../audit-log/entities/audit-log.entity';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
@@ -21,6 +22,11 @@ describe('DependenciesService', () => {
   let ticketsRepo: any;
   let ticketsService: { assertActive: jest.Mock };
   let audit: { record: jest.Mock };
+  let dataSource: any;
+  // Per-transaction repos used by `add`'s `dataSource.transaction` callback.
+  let txTicketRepo: any;
+  let txDepsRepo: any;
+  let txAuditRepo: any;
 
   beforeEach(async () => {
     depsRepo = {
@@ -36,11 +42,44 @@ describe('DependenciesService', () => {
     };
     ticketsService = { assertActive: jest.fn().mockResolvedValue(undefined) };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
+
+    // QueryBuilder chain on `txTicketRepo` powers the pessimistic-lock
+    // load in `add`. Default to a not-found row; specific tests override.
+    const ticketQbDefault = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(null),
+    };
+    txTicketRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(ticketQbDefault),
+      findOne: jest.fn(),
+      __qb: ticketQbDefault,
+    };
+    txDepsRepo = {
+      findOne: jest.fn(),
+      insert: jest.fn().mockResolvedValue(undefined),
+    };
+    txAuditRepo = { insert: jest.fn().mockResolvedValue(undefined) };
+
+    dataSource = {
+      transaction: jest.fn().mockImplementation(async (cb: any) => {
+        return cb({
+          getRepository: (entity: any) => {
+            if (entity === Ticket) return txTicketRepo;
+            if (entity === TicketDependency) return txDepsRepo;
+            if (entity === AuditLog) return txAuditRepo;
+            return undefined;
+          },
+        });
+      }),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         DependenciesService,
         { provide: getRepositoryToken(TicketDependency), useValue: depsRepo },
         { provide: getRepositoryToken(Ticket), useValue: ticketsRepo },
+        { provide: getDataSourceToken(), useValue: dataSource },
         { provide: TicketsService, useValue: ticketsService },
         { provide: AuditLogService, useValue: audit },
       ],
@@ -53,22 +92,20 @@ describe('DependenciesService', () => {
   });
 
   it('cross-project rejected with 400', async () => {
-    ticketsRepo.findOne
-      .mockResolvedValueOnce({ id: 1, projectId: 10 })
-      .mockResolvedValueOnce({ id: 2, projectId: 20 });
+    txTicketRepo.__qb.getOne.mockResolvedValueOnce({ id: 1, projectId: 10 });
+    txTicketRepo.findOne.mockResolvedValueOnce({ id: 2, projectId: 20 });
     await expect(service.add(1, 2)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('duplicate dependency rejected with 409', async () => {
-    ticketsRepo.findOne
-      .mockResolvedValueOnce({ id: 1, projectId: 10 })
-      .mockResolvedValueOnce({ id: 2, projectId: 10 });
-    depsRepo.findOne.mockResolvedValueOnce({ id: 99 });
+    txTicketRepo.__qb.getOne.mockResolvedValueOnce({ id: 1, projectId: 10 });
+    txTicketRepo.findOne.mockResolvedValueOnce({ id: 2, projectId: 10 });
+    txDepsRepo.findOne.mockResolvedValueOnce({ id: 99 });
     await expect(service.add(1, 2)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('soft-deleted ticket rejected with 404', async () => {
-    ticketsRepo.findOne.mockResolvedValueOnce(null);
+    // Default `__qb.getOne` returns null → 404 path.
     await expect(service.add(1, 2)).rejects.toBeInstanceOf(NotFoundException);
   });
 

@@ -5,6 +5,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  VersionColumn,
 } from 'typeorm';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { TicketPriority } from '../../common/enums/ticket-priority.enum';
@@ -42,7 +43,10 @@ export class Ticket {
   @Column({ type: 'boolean', default: false })
   isOverdue: boolean;
 
-  @Column({ type: 'int', default: 1 })
+  // Managed by TypeORM: bumped automatically on every entity `save()`. Bulk
+  // QueryBuilder UPDATEs bypass the optimistic-lock save path and must bump
+  // the column manually via `version: () => 'version + 1'`.
+  @VersionColumn()
   version: number;
 
   @Column({ type: 'boolean', default: false })

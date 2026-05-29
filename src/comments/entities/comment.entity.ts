@@ -6,6 +6,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  VersionColumn,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 
@@ -24,7 +25,10 @@ export class Comment {
   @Column({ type: 'text' })
   content: string;
 
-  @Column({ type: 'int', default: 1 })
+  // Managed by TypeORM: bumped automatically on every entity `save()`. Bulk
+  // QueryBuilder UPDATEs (none today, but kept for parity with Ticket) would
+  // need to bump manually via `version: () => 'version + 1'`.
+  @VersionColumn()
   version: number;
 
   // Internal cascade-restore marker. Belt-and-braces: response DTOs already

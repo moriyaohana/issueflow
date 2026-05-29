@@ -3,7 +3,6 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { AutoAssignService } from './auto-assign.service';
 import { User } from '../../users/entities/user.entity';
-import { Ticket } from '../entities/ticket.entity';
 import { ProjectsService } from '../../projects/projects.service';
 
 describe('AutoAssignService', () => {
@@ -32,7 +31,6 @@ describe('AutoAssignService', () => {
       providers: [
         AutoAssignService,
         { provide: getRepositoryToken(User), useValue: usersRepo },
-        { provide: getRepositoryToken(Ticket), useValue: {} },
         { provide: ProjectsService, useValue: projects },
       ],
     }).compile();

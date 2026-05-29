@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import {
   BadRequestException,
   ConflictException,
@@ -15,6 +15,7 @@ import { TicketStatus } from '../common/enums/ticket-status.enum';
 import { TicketPriority } from '../common/enums/ticket-priority.enum';
 import { TicketType } from '../common/enums/ticket-type.enum';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLog } from '../audit-log/entities/audit-log.entity';
 
 function makeTicket(over: Partial<Ticket> = {}): Ticket {
   return {
@@ -42,24 +43,63 @@ describe('TicketsService', () => {
   let repo: any;
   let projects: any;
   let users: any;
+  let dataSource: any;
+  let txTicketRepo: any;
+  let txAuditRepo: any;
 
   beforeEach(async () => {
+    // Top-level repo: simulates `@VersionColumn` by bumping `version` on save
+    // so tests asserting v1→v2→v3 progression still see the increment.
     repo = {
       create: jest.fn().mockImplementation((d) => ({ id: 1, ...d })),
-      save: jest.fn().mockImplementation((t) => Promise.resolve(t)),
+      save: jest.fn().mockImplementation((t) => {
+        t.version = (t.version ?? 0) + 1;
+        return Promise.resolve(t);
+      }),
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       softRemove: jest.fn().mockResolvedValue(undefined),
       restore: jest.fn().mockResolvedValue(undefined),
       update: jest.fn().mockResolvedValue(undefined),
       count: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
+
+    // Per-transaction repos. The QueryBuilder chain on the ticket repo is
+    // only exercised by `softDelete` (setLock + getOne); other tests use
+    // the top-level `repo`.
+    txTicketRepo = {
+      create: jest.fn().mockImplementation((d) => ({ id: 1, ...d })),
+      save: jest.fn().mockImplementation((t) => {
+        t.version = (t.version ?? 0) + 1;
+        return Promise.resolve(t);
+      }),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn(),
+      }),
+    };
+    txAuditRepo = { insert: jest.fn().mockResolvedValue(undefined) };
+    dataSource = {
+      transaction: jest.fn().mockImplementation(async (cb: any) => {
+        return cb({
+          getRepository: (entity: any) => {
+            if (entity === Ticket) return txTicketRepo;
+            if (entity === AuditLog) return txAuditRepo;
+            return undefined;
+          },
+        });
+      }),
+    };
+
     projects = { existsAndActive: jest.fn().mockResolvedValue(true) };
     users = { existsAndActive: jest.fn().mockResolvedValue(true) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         TicketsService,
         { provide: getRepositoryToken(Ticket), useValue: repo },
+        { provide: getDataSourceToken(), useValue: dataSource },
         { provide: ProjectsService, useValue: projects },
         { provide: UsersService, useValue: users },
         {
@@ -192,7 +232,11 @@ describe('TicketsService', () => {
   });
 
   it('softDelete with stale expectedVersion → 412', async () => {
-    repo.findOne.mockResolvedValueOnce(makeTicket({ version: 4 }));
+    txTicketRepo.createQueryBuilder.mockReturnValueOnce({
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValueOnce(makeTicket({ version: 4 })),
+    });
     await expect(service.softDelete(1, null, 1)).rejects.toBeInstanceOf(
       PreconditionFailedException,
     );

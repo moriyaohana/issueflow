@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, IsNull, Repository } from 'typeorm';
 import { TicketDependency } from './entities/ticket-dependency.entity';
 import { Ticket } from '../entities/ticket.entity';
 import { TicketsService } from '../tickets.service';
@@ -14,6 +14,7 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { actorOf } from '../../audit-log/audit-log.helpers';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
+import { AuditLog } from '../../audit-log/entities/audit-log.entity';
 import { liveOnly } from '../../common/utils/live-only';
 
 @Injectable()
@@ -22,10 +23,16 @@ export class DependenciesService {
     @InjectRepository(TicketDependency)
     private readonly deps: Repository<TicketDependency>,
     @InjectRepository(Ticket) private readonly tickets: Repository<Ticket>,
+    @InjectDataSource() private readonly dataSource: DataSource,
     private readonly ticketsService: TicketsService,
     private readonly audit: AuditLogService,
   ) {}
 
+  /**
+   * Insert a dependency under a row-locked transaction so two concurrent
+   * `POST /tickets/:id/dependencies` requests cannot both pass the
+   * "duplicate already exists" guard and land conflicting rows.
+   */
   async add(
     ticketId: number,
     blockerId: number,
@@ -34,31 +41,43 @@ export class DependenciesService {
     if (ticketId === blockerId) {
       throw new BadRequestException('Ticket cannot depend on itself');
     }
-    const [ticket, blocker] = await Promise.all([
-      this.tickets.findOne({ where: { id: ticketId, deletedAt: IsNull() } }),
-      this.tickets.findOne({ where: { id: blockerId, deletedAt: IsNull() } }),
-    ]);
-    if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
-    if (!blocker)
-      throw new NotFoundException(`Blocker ticket ${blockerId} not found`);
-    if (ticket.projectId !== blocker.projectId) {
-      throw new BadRequestException(
-        'Dependencies must be within the same project',
-      );
-    }
-    const existing = await this.deps.findOne({
-      where: liveOnly<TicketDependency>({ ticketId, blockerId }),
-    });
-    if (existing) {
-      throw new ConflictException('Dependency already exists');
-    }
-    await this.deps.insert({ ticketId, blockerId });
-    await this.audit.record({
-      action: AuditAction.CREATE,
-      entityType: EntityType.TICKET,
-      entityId: ticketId,
-      ...actorOf(actorUserId),
-      metadata: { blockerId },
+    await this.dataSource.transaction(async (manager) => {
+      const ticketRepo = manager.getRepository(Ticket);
+      const depsRepo = manager.getRepository(TicketDependency);
+      // Lock the parent row so concurrent inserts serialise; the blocker
+      // is read non-locking — it only has to exist + be in the same
+      // project, both of which are immutable for the lifetime of the
+      // transaction.
+      const ticket = await ticketRepo
+        .createQueryBuilder('t')
+        .setLock('pessimistic_write')
+        .where('t.id = :id AND t.deletedAt IS NULL', { id: ticketId })
+        .getOne();
+      if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
+      const blocker = await ticketRepo.findOne({
+        where: { id: blockerId, deletedAt: IsNull() },
+      });
+      if (!blocker)
+        throw new NotFoundException(`Blocker ticket ${blockerId} not found`);
+      if (ticket.projectId !== blocker.projectId) {
+        throw new BadRequestException(
+          'Dependencies must be within the same project',
+        );
+      }
+      const existing = await depsRepo.findOne({
+        where: liveOnly<TicketDependency>({ ticketId, blockerId }),
+      });
+      if (existing) {
+        throw new ConflictException('Dependency already exists');
+      }
+      await depsRepo.insert({ ticketId, blockerId });
+      await manager.getRepository(AuditLog).insert({
+        action: AuditAction.CREATE,
+        entityType: EntityType.TICKET,
+        entityId: ticketId,
+        ...actorOf(actorUserId),
+        metadata: { blockerId },
+      });
     });
   }
 
@@ -70,8 +89,12 @@ export class DependenciesService {
       where: liveOnly<TicketDependency>({ ticketId }),
     });
     if (rows.length === 0) return [];
+    // Tighten the projection to the three columns we return so we never
+    // pay to hydrate description/version/dueDate just to drop them. Keeps
+    // the round-trip cheap on tickets with many blockers.
     const blockers = await this.tickets.find({
       where: liveOnly<Ticket>({ id: In(rows.map((r) => r.blockerId)) }),
+      select: ['id', 'title', 'status'],
     });
     return blockers.map((b) => ({
       id: b.id,

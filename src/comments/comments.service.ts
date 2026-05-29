@@ -3,7 +3,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  PreconditionFailedException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, Repository } from 'typeorm';
@@ -21,6 +20,7 @@ import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { UserRole } from '../common/enums/user-role.enum';
 import { liveOnly } from '../common/utils/live-only';
+import { assertVersionMatches } from '../common/utils/version';
 
 /**
  * Minimal authenticated-caller shape used to authorise comment writes. We
@@ -138,15 +138,10 @@ export class CommentsService {
       ) {
         throw new ForbiddenException('Not the author of this comment');
       }
-      if (expectedVersion !== comment.version) {
-        throw new PreconditionFailedException({
-          message: 'Version mismatch',
-          currentVersion: comment.version,
-        });
-      }
+      assertVersionMatches(comment, expectedVersion, 'Comment');
 
       comment.content = dto.content;
-      comment.version += 1;
+      // `@VersionColumn` bumps `version` on save; manual increment removed.
       await manager.getRepository(Comment).save(comment);
 
       const newMentions = await this.mentionParser.resolve(dto.content);
@@ -200,12 +195,7 @@ export class CommentsService {
     ) {
       throw new ForbiddenException('Not the author of this comment');
     }
-    if (expectedVersion !== comment.version) {
-      throw new PreconditionFailedException({
-        message: 'Version mismatch',
-        currentVersion: comment.version,
-      });
-    }
+    assertVersionMatches(comment, expectedVersion, 'Comment');
     await this.comments.softDelete(commentId);
     // Mentions have no `deletedAt` column — Option A: hard-delete on cascade
     // soft-delete and re-insert via the parser on restore. We mirror that
