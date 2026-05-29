@@ -12,7 +12,9 @@ describe('JwtStrategy', () => {
     userActive: boolean;
   }): JwtStrategy {
     const users: any = {
-      existsAndActive: jest.fn().mockResolvedValue(opts.userActive),
+      findActiveById: jest
+        .fn()
+        .mockResolvedValue(opts.userActive ? { id: 1, role: 'DEVELOPER' } : null),
     };
     const invalidated: any = {
       has: jest.fn().mockResolvedValue(opts.invalidatedHas),

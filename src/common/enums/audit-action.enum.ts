@@ -2,8 +2,9 @@
  * Audit action vocabulary documented in the README. The `entityType` column on
  * each audit row disambiguates which subject the verb applies to — there is no
  * `TICKET_CREATE` vs `USER_CREATE`, just `CREATE` with `entityType: TICKET` or
- * `entityType: USER`. `LOGIN` is kept distinct because it is not a state change
- * on a particular entity in the README sense.
+ * `entityType: USER`. `LOGIN` / `LOGIN_FAILED` are kept distinct because they
+ * are not state changes on a particular entity in the README sense — they
+ * record authentication outcomes and feed brute-force detection.
  */
 export enum AuditAction {
   CREATE = 'CREATE',
@@ -13,4 +14,5 @@ export enum AuditAction {
   AUTO_ESCALATE = 'AUTO_ESCALATE',
   AUTO_ASSIGN = 'AUTO_ASSIGN',
   LOGIN = 'LOGIN',
+  LOGIN_FAILED = 'LOGIN_FAILED',
 }

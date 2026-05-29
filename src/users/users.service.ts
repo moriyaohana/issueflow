@@ -150,6 +150,22 @@ export class UsersService {
   }
 
   /**
+   * Lean lookup used on the auth hot-path (JwtStrategy.validate runs on every
+   * authenticated request). Returns the minimal `{id, role}` projection of an
+   * active user, or null if the row is missing/soft-deleted. Collapses the
+   * previous existsAndActive + (implicit) role-from-payload pair into a single
+   * query against the live row.
+   */
+  async findActiveById(
+    id: number,
+  ): Promise<Pick<User, 'id' | 'role'> | null> {
+    return this.users.findOne({
+      where: { id, deletedAt: IsNull() },
+      select: ['id', 'role'],
+    });
+  }
+
+  /**
    * Case-insensitive lookup for @mention parsing. Soft-deleted users are
    * excluded so we never persist mentions pointing at hidden accounts.
    */

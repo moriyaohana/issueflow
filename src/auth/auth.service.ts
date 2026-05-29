@@ -30,14 +30,39 @@ export class AuthService {
   async login(dto: LoginDto): Promise<{ result: LoginResult; userId: number }> {
     const user = await this.users.findByUsernameWithPassword(dto.username);
     if (!user) {
+      // Brute-force / credential-stuffing signal: record the attempt even when
+      // the username doesn't resolve. We never persist the password itself.
+      await this.audit.record({
+        action: AuditAction.LOGIN_FAILED,
+        entityType: EntityType.USER,
+        entityId: 0,
+        performedBy: null,
+        actor: ActorType.SYSTEM,
+        metadata: { attemptedUsername: dto.username, reason: 'unknown_user' },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) {
+      await this.audit.record({
+        action: AuditAction.LOGIN_FAILED,
+        entityType: EntityType.USER,
+        entityId: user.id,
+        performedBy: null,
+        actor: ActorType.SYSTEM,
+        metadata: { attemptedUsername: dto.username, reason: 'bad_password' },
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
     const jti = uuidv4();
-    const expiresInSeconds = this.config.get<number>('JWT_EXPIRES_IN', 3600);
+    // `process.env` values are strings; ConfigService preserves that, so we
+    // must coerce explicitly to avoid `expiresIn` round-tripping to clients as
+    // a string. The signing library also expects a number-or-duration-string,
+    // and a string of digits is treated as ms — using a number is the safe path.
+    const expiresInSeconds = parseInt(
+      this.config.get<string>('JWT_EXPIRES_IN', '3600'),
+      10,
+    );
     const accessToken = await this.jwt.signAsync(
       { sub: user.id, username: user.username, role: user.role, jti },
       { expiresIn: expiresInSeconds },

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { buildTypeOrmOptions } from './config/typeorm.config';
 import { HealthController } from './health.controller';
@@ -29,6 +30,20 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
       useFactory: (config: ConfigService) => buildTypeOrmOptions(config),
     }),
     ScheduleModule.forRoot(),
+    // Throttler is wired here so any controller can opt-in via
+    // `@UseGuards(ThrottlerGuard)` + `@Throttle(...)`. We deliberately do NOT
+    // register ThrottlerGuard as APP_GUARD — a global guard would rate-limit
+    // every route and produce noisy 429s across the e2e suite. The login
+    // route applies it route-locally. Defaults below are generous and only
+    // kick in if a future caller opts in without their own `@Throttle`
+    // override. The skipIf bypass disables throttling under NODE_ENV=test so
+    // the e2e suite (which logs in many test users from the same loopback IP
+    // in a tight loop) doesn't trip the per-IP quota; production behaviour is
+    // unchanged.
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+      skipIf: () => process.env.NODE_ENV === 'test',
+    }),
     AuditLogModule,
     UsersModule,
     AuthModule,

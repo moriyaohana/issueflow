@@ -8,7 +8,7 @@ export class CreateAuditLog1700000007000 implements MigrationInterface {
       CREATE TYPE "audit_logs_action_enum" AS ENUM(
         'CREATE','UPDATE','DELETE','RESTORE',
         'AUTO_ASSIGN','AUTO_ESCALATE',
-        'LOGIN'
+        'LOGIN','LOGIN_FAILED'
       )
     `);
     await queryRunner.query(

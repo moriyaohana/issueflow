@@ -59,7 +59,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!Object.values(UserRole).includes(payload.role as UserRole)) {
       throw new UnauthorizedException('Token has an unknown role');
     }
-    const active = await this.users.existsAndActive(payload.sub);
+    // Previously this was two separate calls (`existsAndActive` + an implicit
+    // fetch later). We collapse to a single live-only `findActiveById` and
+    // reuse its result. The deny-list lookup above remains its own query
+    // because it lives in a different table — inlining via JOIN would be
+    // micro-optimization for negligible gain.
+    const active = await this.users.findActiveById(payload.sub);
     if (!active) {
       throw new UnauthorizedException('User no longer active');
     }
