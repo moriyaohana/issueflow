@@ -47,7 +47,15 @@ for schema. The E2E test suite uses `NODE_ENV=test` to enable
 `synchronize: true` + `dropSchema: true` per test file — it does not
 require migrations to have been run.
 
-## 5. Seed an initial ADMIN user
+## 5. Run the app
+
+```bash
+npm run start:dev        # watch mode on :3000
+# or
+npm run build && node dist/main
+```
+
+## 6. Seed an initial ADMIN user
 
 `POST /users` requires an ADMIN token, so a fresh database cannot
 bootstrap itself through the HTTP API. Seed the first admin directly
@@ -122,14 +130,6 @@ curl -s -X POST http://localhost:3000/auth/login \
 
 A non-empty `accessToken` confirms the seed was successful. Save it for
 the smoke-check flow in step 8.
-
-## 6. Run the app
-
-```bash
-npm run start:dev        # watch mode on :3000
-# or
-npm run build && node dist/main
-```
 
 ## 7. Tests
 
