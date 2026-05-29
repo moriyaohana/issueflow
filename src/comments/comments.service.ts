@@ -5,7 +5,7 @@ import {
   PreconditionFailedException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, IsNull, Repository } from 'typeorm';
 import { Comment } from './entities/comment.entity';
 import { Mention } from './entities/mention.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -15,9 +15,9 @@ import { TicketsService } from '../tickets/tickets.service';
 import { UsersService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
-import { ActorType } from '../common/enums/actor-type.enum';
 
 export interface CommentResponse {
   id: number;
@@ -79,8 +79,7 @@ export class CommentsService {
       action: AuditAction.COMMENT_CREATE,
       entityType: EntityType.COMMENT,
       entityId: saved.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
       metadata: { ticketId, mentionedUserIds: mentioned.map((u) => u.id) },
     });
     return this.toResponse(saved, mentioned);
@@ -145,8 +144,7 @@ export class CommentsService {
       action: AuditAction.COMMENT_UPDATE,
       entityType: EntityType.COMMENT,
       entityId: commentId,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     return response;
   }
@@ -169,8 +167,7 @@ export class CommentsService {
       action: AuditAction.COMMENT_DELETE,
       entityType: EntityType.COMMENT,
       entityId: commentId,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
   }
 
@@ -179,12 +176,21 @@ export class CommentsService {
       throw new NotFoundException(`Ticket ${ticketId} not found`);
     }
     const rows = await this.comments.find({
-      where: { ticketId },
+      where: { ticketId, deletedAt: IsNull() },
       order: { createdAt: 'ASC' },
     });
     return Promise.all(rows.map(async (c) => this.toResponseWithLookup(c)));
   }
 
+  /**
+   * Paginated mention feed.
+   *
+   * The mention row itself has no timestamp, so we drive the order via the
+   * comment it points at: most recent comment first, with a tiebreak on
+   * `mention.id DESC` so that two comments sharing a `createdAt` (e.g. tests
+   * inserting in a tight loop) still page deterministically.
+   * The ORDER BY is applied before LIMIT/OFFSET so pagination is stable.
+   */
   async getMentionsForUser(
     userId: number,
     page = 1,
@@ -192,49 +198,109 @@ export class CommentsService {
   ): Promise<PaginatedMentions> {
     const take = Math.max(1, pageSize);
     const skip = (Math.max(1, page) - 1) * take;
-    const [mentionRows, total] = await this.mentions.findAndCount({
-      where: { userId },
-      take,
-      skip,
-    });
+    // Use limit/offset instead of skip/take: TypeORM's skip/take wraps the
+    // query in a DISTINCT subquery that can't reference ORDER BY columns from
+    // joined tables ("column distinctAlias.c_createdAt does not exist").
+    const baseQb = () =>
+      this.mentions
+        .createQueryBuilder('m')
+        .innerJoin(Comment, 'c', 'c.id = m.commentId AND c.deletedAt IS NULL')
+        .where('m.userId = :userId', { userId });
+    const total = await baseQb().getCount();
+    const mentionRows = await baseQb()
+      .orderBy('c.createdAt', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .limit(take)
+      .offset(skip)
+      .getMany();
     if (mentionRows.length === 0) {
       return { data: [], total, page };
     }
     const commentIds = mentionRows.map((m) => m.commentId);
     const comments = await this.comments.find({
-      where: { id: In(commentIds) },
-      order: { createdAt: 'DESC' },
+      where: { id: In(commentIds), deletedAt: IsNull() },
     });
+    // Preserve the ORDER BY from the join — index comments by id and walk the
+    // mention rows in their paginated order to produce the response list.
+    const byId = new Map(comments.map((c) => [c.id, c]));
+    const ordered: Comment[] = [];
+    for (const m of mentionRows) {
+      const c = byId.get(m.commentId);
+      if (c) ordered.push(c);
+    }
     const data = await Promise.all(
-      comments.map((c) => this.toResponseWithLookup(c)),
+      ordered.map((c) => this.toResponseWithLookup(c)),
     );
     return { data, total, page };
   }
 
-  /** Cascade hook fired by TicketsService.softDelete (and project cascade). */
-  async cascadeHardDeleteComments(
+  /**
+   * Cascade hook fired by TicketsService.softDelete (and project cascade).
+   * Soft-deletes every live comment owned by the given tickets so a later
+   * restore can resurrect them. The child's `deletedAt` is stamped to the
+   * parent ticket's `deletedAt` so the restore path can match them exactly.
+   */
+  async cascadeSoftDeleteComments(
     ticketIds: number[],
+    parentDeletedAt: Date,
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
-    const ids = (
-      await this.comments.find({
-        where: { ticketId: In(ticketIds) },
-        select: ['id'],
-      })
-    ).map((c) => c.id);
-    if (ids.length > 0) {
-      await this.mentions.delete({ commentId: In(ids) });
-    }
-    await this.comments.delete({ ticketId: In(ticketIds) });
-    for (const commentId of ids) {
+    const rows = await this.comments.find({
+      where: { ticketId: In(ticketIds), deletedAt: IsNull() },
+      select: ['id'],
+    });
+    if (rows.length === 0) return;
+    await this.comments
+      .createQueryBuilder()
+      .update(Comment)
+      .set({ deletedAt: parentDeletedAt })
+      .where('ticketId IN (:...ticketIds)', { ticketIds })
+      .andWhere('deletedAt IS NULL')
+      .execute();
+    for (const r of rows) {
       await this.audit.record({
         action: AuditAction.COMMENT_DELETE,
         entityType: EntityType.COMMENT,
-        entityId: commentId,
-        performedBy: actorUserId,
-        actor: ActorType.USER,
-        metadata: { cascade: true, ticketIds },
+        entityId: r.id,
+        ...actorOf(actorUserId),
+        metadata: { cascade: 'soft', ticketIds },
+      });
+    }
+  }
+
+  /**
+   * Restore previously cascade-soft-deleted comments. Only resurrects rows
+   * whose `deletedAt` matches the parent ticket's `deletedAt` at delete time
+   * — so an independently-deleted comment with a different timestamp is left
+   * alone.
+   */
+  async cascadeRestoreComments(
+    ticketIds: number[],
+    parentDeletedAt: Date,
+    actorUserId: number | null = null,
+  ): Promise<void> {
+    if (ticketIds.length === 0) return;
+    const rows = await this.comments.find({
+      where: { ticketId: In(ticketIds), deletedAt: parentDeletedAt },
+      select: ['id'],
+      withDeleted: true,
+    });
+    if (rows.length === 0) return;
+    await this.comments
+      .createQueryBuilder()
+      .update(Comment)
+      .set({ deletedAt: null })
+      .where('ticketId IN (:...ticketIds)', { ticketIds })
+      .andWhere('deletedAt = :parentDeletedAt', { parentDeletedAt })
+      .execute();
+    for (const r of rows) {
+      await this.audit.record({
+        action: AuditAction.COMMENT_RESTORE,
+        entityType: EntityType.COMMENT,
+        entityId: r.id,
+        ...actorOf(actorUserId),
+        metadata: { cascade: 'soft', ticketIds },
       });
     }
   }

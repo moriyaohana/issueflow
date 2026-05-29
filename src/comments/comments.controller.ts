@@ -38,7 +38,7 @@ export class CommentsController {
     @Body() dto: CreateCommentDto,
     @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.comments.create(ticketId, dto, actor?.id ?? null);
+    return this.comments.create(ticketId, dto, actor.id);
   }
 
   @Patch(':commentId')
@@ -50,12 +50,7 @@ export class CommentsController {
     @CurrentUser() actor: CurrentUserPayload,
     @IfMatch() expectedVersion: number,
   ) {
-    return this.comments.update(
-      commentId,
-      dto,
-      actor?.id ?? null,
-      expectedVersion,
-    );
+    return this.comments.update(commentId, dto, actor.id, expectedVersion);
   }
 
   @Delete(':commentId')
@@ -66,6 +61,6 @@ export class CommentsController {
     @CurrentUser() actor: CurrentUserPayload,
     @IfMatch() expectedVersion: number,
   ): Promise<void> {
-    await this.comments.delete(commentId, actor?.id ?? null, expectedVersion);
+    await this.comments.delete(commentId, actor.id, expectedVersion);
   }
 }

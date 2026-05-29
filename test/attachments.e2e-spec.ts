@@ -122,7 +122,7 @@ describe('Attachments (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(
-      audit.body.find((r: any) => r.metadata?.cascade === true),
+      audit.body.find((r: any) => r.metadata?.cascade === 'soft'),
     ).toBeTruthy();
   });
 });

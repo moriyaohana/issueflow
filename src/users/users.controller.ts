@@ -13,7 +13,10 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
-import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../common/decorators/current-user.decorator';
 
 @Controller('users')
 export class UsersController {
@@ -35,7 +38,7 @@ export class UsersController {
     @Body() dto: CreateUserDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<UserResponseDto> {
-    return this.users.create(dto, actor?.id ?? null);
+    return this.users.create(dto, actor.id);
   }
 
   @Post('update/:userId')
@@ -45,7 +48,7 @@ export class UsersController {
     @Body() dto: UpdateUserDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<UserResponseDto> {
-    return this.users.update(userId, dto, actor?.id ?? null);
+    return this.users.update(userId, dto, actor.id);
   }
 
   @Delete(':userId')
@@ -54,6 +57,6 @@ export class UsersController {
     @Param('userId', ParseIntPipe) userId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<void> {
-    await this.users.softDelete(userId, actor?.id ?? null);
+    await this.users.softDelete(userId, actor.id);
   }
 }

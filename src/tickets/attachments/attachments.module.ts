@@ -20,8 +20,14 @@ export class AttachmentsModule implements OnModuleInit {
 
   onModuleInit(): void {
     this.tickets.registerCascadeTarget({
-      cascadeHardDeleteAttachments: (ids, actor) =>
-        this.attachments.cascadeHardDeleteAttachments(ids, actor),
+      cascadeSoftDeleteAttachments: (ids, parentDeletedAt, actor) =>
+        this.attachments.cascadeSoftDeleteAttachments(
+          ids,
+          parentDeletedAt,
+          actor,
+        ),
+      cascadeRestoreAttachments: (ids, parentDeletedAt, actor) =>
+        this.attachments.cascadeRestoreAttachments(ids, parentDeletedAt, actor),
     });
   }
 }

@@ -196,7 +196,7 @@ describe('Comments + Mentions (e2e)', () => {
     ]);
   });
 
-  it('cascade: soft-delete the ticket → comments hard-gone; restore does not bring them back', async () => {
+  it('cascade: soft-delete the ticket → comments soft-gone; restore brings them back', async () => {
     const tk = await request(ctx.app.getHttpServer())
       .post('/tickets')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -232,7 +232,8 @@ describe('Comments + Mentions (e2e)', () => {
       .get(`/tickets/${tid}/comments`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    expect(list.body).toEqual([]);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].content).toBe('sticky @alice');
   });
 
   it('refusing to comment when author is soft-deleted (400)', async () => {

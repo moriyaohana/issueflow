@@ -10,9 +10,9 @@ import { TicketDependency } from './entities/ticket-dependency.entity';
 import { Ticket } from '../entities/ticket.entity';
 import { TicketStatus } from '../../common/enums/ticket-status.enum';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { actorOf } from '../../audit-log/audit-log.helpers';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
-import { ActorType } from '../../common/enums/actor-type.enum';
 
 @Injectable()
 export class DependenciesService {
@@ -54,8 +54,7 @@ export class DependenciesService {
       action: AuditAction.DEPENDENCY_ADD,
       entityType: EntityType.TICKET,
       entityId: ticketId,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
       metadata: { blockerId },
     });
   }
@@ -67,7 +66,9 @@ export class DependenciesService {
       where: { id: ticketId, deletedAt: IsNull() },
     });
     if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
-    const rows = await this.deps.find({ where: { ticketId } });
+    const rows = await this.deps.find({
+      where: { ticketId, deletedAt: IsNull() },
+    });
     if (rows.length === 0) return [];
     const blockers = await this.tickets.find({
       where: { id: In(rows.map((r) => r.blockerId)) },
@@ -86,15 +87,16 @@ export class DependenciesService {
   ): Promise<void> {
     const ticket = await this.tickets.findOne({ where: { id: ticketId } });
     if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
-    const dep = await this.deps.findOne({ where: { ticketId, blockerId } });
+    const dep = await this.deps.findOne({
+      where: { ticketId, blockerId, deletedAt: IsNull() },
+    });
     if (!dep) throw new NotFoundException(`Dependency not found`);
     await this.deps.delete({ id: dep.id });
     await this.audit.record({
       action: AuditAction.DEPENDENCY_REMOVE,
       entityType: EntityType.TICKET,
       entityId: ticketId,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
       metadata: { blockerId },
     });
   }
@@ -105,7 +107,9 @@ export class DependenciesService {
    * are returned in the error body so the client can react.
    */
   async assertBlockersResolvedForDone(ticketId: number): Promise<void> {
-    const deps = await this.deps.find({ where: { ticketId } });
+    const deps = await this.deps.find({
+      where: { ticketId, deletedAt: IsNull() },
+    });
     if (deps.length === 0) return;
     const blockers = await this.tickets.find({
       where: { id: In(deps.map((d) => d.blockerId)) },
@@ -121,30 +125,78 @@ export class DependenciesService {
     }
   }
 
-  /** Cascade hook fired by ticket soft-delete. */
-  async cascadeHardDeleteDependencies(
+  /**
+   * Cascade hook fired by ticket soft-delete. Soft-deletes every live
+   * dependency that references the given tickets on either side so a later
+   * ticket restore can resurrect them as a set. Children's `deletedAt` is
+   * stamped to the parent ticket's `deletedAt` so restore can match them.
+   */
+  async cascadeSoftDeleteDependencies(
     ticketIds: number[],
+    parentDeletedAt: Date,
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
     const rows = await this.deps
       .createQueryBuilder('d')
       .select(['d.id', 'd.ticketId', 'd.blockerId'])
-      .where('d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)', {
-        ids: ticketIds,
-      })
+      .where(
+        '(d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)) AND d.deletedAt IS NULL',
+        { ids: ticketIds },
+      )
       .getMany();
     if (rows.length === 0) return;
-    await this.deps.delete({ id: In(rows.map((r) => r.id)) });
-    const actor = actorUserId == null ? ActorType.SYSTEM : ActorType.USER;
+    await this.deps
+      .createQueryBuilder()
+      .update(TicketDependency)
+      .set({ deletedAt: parentDeletedAt })
+      .where('id IN (:...ids)', { ids: rows.map((r) => r.id) })
+      .execute();
     for (const r of rows) {
       await this.audit.record({
         action: AuditAction.DEPENDENCY_DELETE,
         entityType: EntityType.DEPENDENCY,
         entityId: r.id,
-        performedBy: actorUserId,
-        actor,
-        metadata: { cascade: true, ticketIds },
+        ...actorOf(actorUserId),
+        metadata: { cascade: 'soft', ticketIds },
+      });
+    }
+  }
+
+  /**
+   * Restore previously cascade-soft-deleted dependencies. Only rows whose
+   * `deletedAt` matches the parent ticket's `deletedAt` are resurrected, so
+   * an independently-removed dependency stays gone.
+   */
+  async cascadeRestoreDependencies(
+    ticketIds: number[],
+    parentDeletedAt: Date,
+    actorUserId: number | null = null,
+  ): Promise<void> {
+    if (ticketIds.length === 0) return;
+    const rows = await this.deps
+      .createQueryBuilder('d')
+      .select(['d.id'])
+      .where(
+        '(d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)) AND d.deletedAt = :parentDeletedAt',
+        { ids: ticketIds, parentDeletedAt },
+      )
+      .withDeleted()
+      .getMany();
+    if (rows.length === 0) return;
+    await this.deps
+      .createQueryBuilder()
+      .update(TicketDependency)
+      .set({ deletedAt: null })
+      .where('id IN (:...ids)', { ids: rows.map((r) => r.id) })
+      .execute();
+    for (const r of rows) {
+      await this.audit.record({
+        action: AuditAction.DEPENDENCY_RESTORE,
+        entityType: EntityType.DEPENDENCY,
+        entityId: r.id,
+        ...actorOf(actorUserId),
+        metadata: { cascade: 'soft', ticketIds },
       });
     }
   }

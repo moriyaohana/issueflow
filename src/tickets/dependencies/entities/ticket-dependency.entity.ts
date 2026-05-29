@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   PrimaryGeneratedColumn,
@@ -20,4 +21,7 @@ export class TicketDependency {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @DeleteDateColumn({ name: 'deletedAt' })
+  deletedAt: Date | null;
 }

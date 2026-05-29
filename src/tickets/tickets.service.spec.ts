@@ -198,14 +198,16 @@ describe('TicketsService', () => {
     );
   });
 
-  it('cascade-soft-delete-for-project sets deletedByCascade=true and soft-removes', async () => {
+  it('cascade-soft-delete-for-project marks tickets with deletedByCascade + parent deletedAt', async () => {
     const tickets = [makeTicket({ id: 1 }), makeTicket({ id: 2 })];
     repo.find.mockResolvedValueOnce(tickets);
     await service.cascadeSoftDeleteForProject(10);
     expect(repo.update).toHaveBeenCalledWith(
       expect.objectContaining({ id: expect.anything() }),
-      { deletedByCascade: true },
+      expect.objectContaining({
+        deletedByCascade: true,
+        deletedAt: expect.any(Date),
+      }),
     );
-    expect(repo.softRemove).toHaveBeenCalledWith(tickets);
   });
 });

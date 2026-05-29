@@ -10,9 +10,9 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UsersService } from '../users/users.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
-import { ActorType } from '../common/enums/actor-type.enum';
 
 /**
  * Cascade hook contract: TicketsService (Agent 5) implements these and
@@ -69,8 +69,7 @@ export class ProjectsService {
       action: AuditAction.PROJECT_CREATE,
       entityType: EntityType.PROJECT,
       entityId: saved.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     return saved;
   }
@@ -107,8 +106,7 @@ export class ProjectsService {
       action: AuditAction.PROJECT_UPDATE,
       entityType: EntityType.PROJECT,
       entityId: saved.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     return saved;
   }
@@ -123,8 +121,7 @@ export class ProjectsService {
       action: AuditAction.PROJECT_DELETE,
       entityType: EntityType.PROJECT,
       entityId: project.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     if (this.cascadeHandler) {
       await this.cascadeHandler.cascadeSoftDeleteForProject(
@@ -151,8 +148,7 @@ export class ProjectsService {
       action: AuditAction.PROJECT_RESTORE,
       entityType: EntityType.PROJECT,
       entityId: project.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     if (this.cascadeHandler) {
       await this.cascadeHandler.cascadeRestoreForProject(

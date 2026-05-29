@@ -28,8 +28,14 @@ export class DependenciesModule implements OnModuleInit {
         this.deps.assertBlockersResolvedForDone(id),
     });
     this.tickets.registerCascadeTarget({
-      cascadeHardDeleteDependencies: (ids, actorUserId) =>
-        this.deps.cascadeHardDeleteDependencies(ids, actorUserId),
+      cascadeSoftDeleteDependencies: (ids, parentDeletedAt, actorUserId) =>
+        this.deps.cascadeSoftDeleteDependencies(
+          ids,
+          parentDeletedAt,
+          actorUserId,
+        ),
+      cascadeRestoreDependencies: (ids, parentDeletedAt, actorUserId) =>
+        this.deps.cascadeRestoreDependencies(ids, parentDeletedAt, actorUserId),
     });
   }
 }

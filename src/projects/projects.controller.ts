@@ -18,7 +18,10 @@ import { Project } from './entities/project.entity';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
-import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../common/decorators/current-user.decorator';
 
 @Controller('projects')
 export class ProjectsController {
@@ -47,7 +50,7 @@ export class ProjectsController {
     @Body() dto: CreateProjectDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<Project> {
-    return this.projects.create(dto, actor?.id ?? null);
+    return this.projects.create(dto, actor.id);
   }
 
   @Patch(':projectId')
@@ -57,7 +60,7 @@ export class ProjectsController {
     @Body() dto: UpdateProjectDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<Project> {
-    return this.projects.update(projectId, dto, actor?.id ?? null);
+    return this.projects.update(projectId, dto, actor.id);
   }
 
   @Delete(':projectId')
@@ -66,7 +69,7 @@ export class ProjectsController {
     @Param('projectId', ParseIntPipe) projectId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<void> {
-    await this.projects.softDelete(projectId, actor?.id ?? null);
+    await this.projects.softDelete(projectId, actor.id);
   }
 
   @Post(':projectId/restore')
@@ -77,6 +80,6 @@ export class ProjectsController {
     @Param('projectId', ParseIntPipe) projectId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<Project> {
-    return this.projects.restore(projectId, actor?.id ?? null);
+    return this.projects.restore(projectId, actor.id);
   }
 }

@@ -88,15 +88,29 @@ describe('DependenciesService', () => {
     ).resolves.toBeUndefined();
   });
 
-  describe('cascadeHardDeleteDependencies', () => {
+  describe('cascadeSoftDeleteDependencies', () => {
+    const parentDeletedAt = new Date('2026-05-29T10:00:00Z');
+
     function mockCascadeRows(
       rows: { id: number; ticketId: number; blockerId: number }[],
     ) {
-      depsRepo.createQueryBuilder.mockReturnValueOnce({
-        select: jest.fn().mockReturnThis(),
+      const updateBuilder = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(rows),
+        execute: jest.fn().mockResolvedValue({ affected: rows.length }),
+      };
+      depsRepo.createQueryBuilder.mockImplementation((alias?: string) => {
+        if (alias === 'd') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            getMany: jest.fn().mockResolvedValue(rows),
+          };
+        }
+        return updateBuilder;
       });
+      return updateBuilder;
     }
 
     it('emits one DEPENDENCY_DELETE audit row per removed dependency', async () => {
@@ -104,7 +118,7 @@ describe('DependenciesService', () => {
         { id: 11, ticketId: 1, blockerId: 2 },
         { id: 12, ticketId: 3, blockerId: 1 },
       ]);
-      await service.cascadeHardDeleteDependencies([1], 42);
+      await service.cascadeSoftDeleteDependencies([1], parentDeletedAt, 42);
       expect(audit.record).toHaveBeenCalledTimes(2);
       expect(audit.record).toHaveBeenNthCalledWith(1, {
         action: AuditAction.DEPENDENCY_DELETE,
@@ -112,7 +126,7 @@ describe('DependenciesService', () => {
         entityId: 11,
         performedBy: 42,
         actor: ActorType.USER,
-        metadata: { cascade: true, ticketIds: [1] },
+        metadata: { cascade: 'soft', ticketIds: [1] },
       });
       expect(audit.record).toHaveBeenNthCalledWith(2, {
         action: AuditAction.DEPENDENCY_DELETE,
@@ -120,7 +134,7 @@ describe('DependenciesService', () => {
         entityId: 12,
         performedBy: 42,
         actor: ActorType.USER,
-        metadata: { cascade: true, ticketIds: [1] },
+        metadata: { cascade: 'soft', ticketIds: [1] },
       });
     });
 
@@ -129,7 +143,7 @@ describe('DependenciesService', () => {
         { id: 21, ticketId: 5, blockerId: 6 },
         { id: 22, ticketId: 7, blockerId: 5 },
       ]);
-      await service.cascadeHardDeleteDependencies([5], null);
+      await service.cascadeSoftDeleteDependencies([5], parentDeletedAt, null);
       expect(audit.record).toHaveBeenCalledTimes(2);
       for (const call of audit.record.mock.calls) {
         expect(call[0]).toMatchObject({
@@ -141,7 +155,7 @@ describe('DependenciesService', () => {
 
     it('uses ActorType.USER when actorUserId is non-null', async () => {
       mockCascadeRows([{ id: 31, ticketId: 9, blockerId: 10 }]);
-      await service.cascadeHardDeleteDependencies([9], 7);
+      await service.cascadeSoftDeleteDependencies([9], parentDeletedAt, 7);
       expect(audit.record).toHaveBeenCalledTimes(1);
       expect(audit.record.mock.calls[0][0]).toMatchObject({
         actor: ActorType.USER,
@@ -150,10 +164,10 @@ describe('DependenciesService', () => {
     });
 
     it('is a no-op when no dependencies match', async () => {
-      mockCascadeRows([]);
-      await service.cascadeHardDeleteDependencies([99], 1);
+      const updateBuilder = mockCascadeRows([]);
+      await service.cascadeSoftDeleteDependencies([99], parentDeletedAt, 1);
       expect(audit.record).not.toHaveBeenCalled();
-      expect(depsRepo.delete).not.toHaveBeenCalled();
+      expect(updateBuilder.execute).not.toHaveBeenCalled();
     });
   });
 });

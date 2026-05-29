@@ -65,7 +65,7 @@ export class TicketsController {
     @CurrentUser() actor: CurrentUserPayload,
     @Res() res: Response,
   ): Promise<void> {
-    const csv = await this.csvSvc.export(projectId, actor?.id ?? null);
+    const csv = await this.csvSvc.export(projectId, actor.id);
     res
       .status(HttpStatus.OK)
       .header('Content-Type', 'text/csv')
@@ -100,7 +100,7 @@ export class TicketsController {
     @Body('projectId', ParseIntPipe) projectId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<ImportResult> {
-    return this.csvSvc.import(projectId, file, actor?.id ?? null);
+    return this.csvSvc.import(projectId, file, actor.id);
   }
 
   @Get()
@@ -119,7 +119,7 @@ export class TicketsController {
     @Body() dto: CreateTicketDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<Ticket> {
-    return this.tickets.create(dto, actor?.id ?? null);
+    return this.tickets.create(dto, actor.id);
   }
 
   @Patch(':ticketId')
@@ -130,12 +130,7 @@ export class TicketsController {
     @CurrentUser() actor: CurrentUserPayload,
     @IfMatch() expectedVersion: number,
   ): Promise<Ticket> {
-    return this.tickets.update(
-      ticketId,
-      dto,
-      actor?.id ?? null,
-      expectedVersion,
-    );
+    return this.tickets.update(ticketId, dto, actor.id, expectedVersion);
   }
 
   @Delete(':ticketId')
@@ -145,7 +140,7 @@ export class TicketsController {
     @CurrentUser() actor: CurrentUserPayload,
     @IfMatch() expectedVersion: number,
   ): Promise<void> {
-    await this.tickets.softDelete(ticketId, actor?.id ?? null, expectedVersion);
+    await this.tickets.softDelete(ticketId, actor.id, expectedVersion);
   }
 
   @Post(':ticketId/restore')
@@ -156,6 +151,6 @@ export class TicketsController {
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<Ticket> {
-    return this.tickets.restore(ticketId, actor?.id ?? null);
+    return this.tickets.restore(ticketId, actor.id);
   }
 }

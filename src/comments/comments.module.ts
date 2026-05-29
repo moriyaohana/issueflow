@@ -27,12 +27,14 @@ export class CommentsModule implements OnModuleInit {
     private readonly comments: CommentsService,
   ) {}
 
-  // Register the comment cascade target so TicketsService can hard-delete
-  // comments when a ticket (or its parent project) is soft-deleted.
+  // Register the comment cascade target so TicketsService can soft-delete
+  // and restore comments alongside a ticket (or its parent project).
   onModuleInit(): void {
     this.tickets.registerCascadeTarget({
-      cascadeHardDeleteComments: (ids, actor) =>
-        this.comments.cascadeHardDeleteComments(ids, actor),
+      cascadeSoftDeleteComments: (ids, parentDeletedAt, actor) =>
+        this.comments.cascadeSoftDeleteComments(ids, parentDeletedAt, actor),
+      cascadeRestoreComments: (ids, parentDeletedAt, actor) =>
+        this.comments.cascadeRestoreComments(ids, parentDeletedAt, actor),
     });
   }
 }

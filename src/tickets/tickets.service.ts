@@ -17,21 +17,40 @@ import {
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { ActorType } from '../common/enums/actor-type.enum';
 
 export interface TicketCascadeTarget {
-  cascadeHardDeleteComments(
+  cascadeSoftDeleteComments(
     ticketIds: number[],
+    parentDeletedAt: Date,
     actorUserId: number | null,
   ): Promise<void>;
-  cascadeHardDeleteDependencies(
+  cascadeSoftDeleteDependencies(
     ticketIds: number[],
+    parentDeletedAt: Date,
     actorUserId: number | null,
   ): Promise<void>;
-  cascadeHardDeleteAttachments(
+  cascadeSoftDeleteAttachments(
     ticketIds: number[],
+    parentDeletedAt: Date,
+    actorUserId: number | null,
+  ): Promise<void>;
+  cascadeRestoreComments(
+    ticketIds: number[],
+    parentDeletedAt: Date,
+    actorUserId: number | null,
+  ): Promise<void>;
+  cascadeRestoreDependencies(
+    ticketIds: number[],
+    parentDeletedAt: Date,
+    actorUserId: number | null,
+  ): Promise<void>;
+  cascadeRestoreAttachments(
+    ticketIds: number[],
+    parentDeletedAt: Date,
     actorUserId: number | null,
   ): Promise<void>;
 }
@@ -111,8 +130,7 @@ export class TicketsService {
       action: AuditAction.TICKET_CREATE,
       entityType: EntityType.TICKET,
       entityId: saved.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     if (autoAssigned && assigneeId != null) {
       // Auto-assignment is a system-driven decision triggered as a side-effect
@@ -250,13 +268,20 @@ export class TicketsService {
       action: AuditAction.TICKET_UPDATE,
       entityType: EntityType.TICKET,
       entityId: saved.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     });
     return saved;
   }
 
+  /**
+   * Soft-delete a ticket and cascade-soft-delete its children.
+   *
+   * The delete timestamp is set explicitly on the row (rather than relying on
+   * `softRemove`'s internal default) so we can pass the same timestamp into
+   * the cascade hooks; the children stamp their own `deletedAt` to match,
+   * which lets the restore path resurrect the set atomically.
+   */
   async softDelete(
     id: number,
     actorUserId: number | null,
@@ -269,14 +294,15 @@ export class TicketsService {
         currentVersion: ticket.version,
       });
     }
-    await this.runCascadeDeletes([ticket.id], actorUserId);
-    await this.tickets.softRemove(ticket);
+    const deletedAt = new Date();
+    ticket.deletedAt = deletedAt;
+    await this.tickets.save(ticket);
+    await this.runCascadeSoftDeletes([ticket.id], deletedAt, actorUserId);
     await this.audit.record({
       action: AuditAction.TICKET_DELETE,
       entityType: EntityType.TICKET,
       entityId: ticket.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
   }
 
@@ -290,17 +316,18 @@ export class TicketsService {
     });
     if (!ticket) throw new NotFoundException(`Ticket ${id} not found`);
     if (!ticket.deletedAt) return ticket;
+    const previousDeletedAt = ticket.deletedAt;
     await this.tickets.restore(id);
     if (ticket.deletedByCascade) {
       ticket.deletedByCascade = false;
       await this.tickets.update(id, { deletedByCascade: false });
     }
+    await this.runCascadeRestores([ticket.id], previousDeletedAt, actorUserId);
     await this.audit.record({
       action: AuditAction.TICKET_RESTORE,
       entityType: EntityType.TICKET,
       entityId: ticket.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     return this.tickets.findOne({ where: { id } }) as Promise<Ticket>;
   }
@@ -315,17 +342,19 @@ export class TicketsService {
     });
     if (tickets.length === 0) return;
     const ids = tickets.map((t) => t.id);
-    await this.tickets.update({ id: In(ids) }, { deletedByCascade: true });
-    await this.runCascadeDeletes(ids, actorUserId);
-    await this.tickets.softRemove(tickets);
+    const deletedAt = new Date();
+    await this.tickets.update(
+      { id: In(ids) },
+      { deletedByCascade: true, deletedAt },
+    );
+    await this.runCascadeSoftDeletes(ids, deletedAt, actorUserId);
     for (const t of tickets) {
       await this.audit.record({
         action: AuditAction.TICKET_DELETE,
         entityType: EntityType.TICKET,
         entityId: t.id,
-        performedBy: actorUserId,
-        actor: ActorType.USER,
-        metadata: { cascade: true, projectId },
+        ...actorOf(actorUserId),
+        metadata: { cascade: 'soft', projectId },
       });
     }
   }
@@ -341,6 +370,15 @@ export class TicketsService {
     });
     if (candidates.length === 0) return;
     const ids = candidates.map((t) => t.id);
+    // Children's deletedAt was stamped to each ticket's deletedAt at delete
+    // time, so we restore them ticket-by-ticket to keep the exact-match
+    // semantics; an independently-deleted child whose timestamp doesn't
+    // line up is correctly left alone.
+    for (const t of candidates) {
+      if (t.deletedAt) {
+        await this.runCascadeRestores([t.id], t.deletedAt, actorUserId);
+      }
+    }
     await this.tickets.restore({ id: In(ids) });
     await this.tickets.update({ id: In(ids) }, { deletedByCascade: false });
     for (const t of candidates) {
@@ -348,26 +386,67 @@ export class TicketsService {
         action: AuditAction.TICKET_RESTORE,
         entityType: EntityType.TICKET,
         entityId: t.id,
-        performedBy: actorUserId,
-        actor: ActorType.USER,
-        metadata: { cascade: true, projectId },
+        ...actorOf(actorUserId),
+        metadata: { cascade: 'soft', projectId },
       });
     }
   }
 
-  private async runCascadeDeletes(
+  private async runCascadeSoftDeletes(
     ticketIds: number[],
+    parentDeletedAt: Date,
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
-    if (this.cascade.cascadeHardDeleteComments) {
-      await this.cascade.cascadeHardDeleteComments(ticketIds, actorUserId);
+    if (this.cascade.cascadeSoftDeleteComments) {
+      await this.cascade.cascadeSoftDeleteComments(
+        ticketIds,
+        parentDeletedAt,
+        actorUserId,
+      );
     }
-    if (this.cascade.cascadeHardDeleteDependencies) {
-      await this.cascade.cascadeHardDeleteDependencies(ticketIds, actorUserId);
+    if (this.cascade.cascadeSoftDeleteDependencies) {
+      await this.cascade.cascadeSoftDeleteDependencies(
+        ticketIds,
+        parentDeletedAt,
+        actorUserId,
+      );
     }
-    if (this.cascade.cascadeHardDeleteAttachments) {
-      await this.cascade.cascadeHardDeleteAttachments(ticketIds, actorUserId);
+    if (this.cascade.cascadeSoftDeleteAttachments) {
+      await this.cascade.cascadeSoftDeleteAttachments(
+        ticketIds,
+        parentDeletedAt,
+        actorUserId,
+      );
+    }
+  }
+
+  private async runCascadeRestores(
+    ticketIds: number[],
+    parentDeletedAt: Date,
+    actorUserId: number | null = null,
+  ): Promise<void> {
+    if (ticketIds.length === 0) return;
+    if (this.cascade.cascadeRestoreComments) {
+      await this.cascade.cascadeRestoreComments(
+        ticketIds,
+        parentDeletedAt,
+        actorUserId,
+      );
+    }
+    if (this.cascade.cascadeRestoreDependencies) {
+      await this.cascade.cascadeRestoreDependencies(
+        ticketIds,
+        parentDeletedAt,
+        actorUserId,
+      );
+    }
+    if (this.cascade.cascadeRestoreAttachments) {
+      await this.cascade.cascadeRestoreAttachments(
+        ticketIds,
+        parentDeletedAt,
+        actorUserId,
+      );
     }
   }
 

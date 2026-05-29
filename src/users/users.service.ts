@@ -12,9 +12,9 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
-import { ActorType } from '../common/enums/actor-type.enum';
 
 // Postgres unique-violation error code; surfaced as 409 instead of 500.
 const PG_UNIQUE_VIOLATION = '23505';
@@ -27,7 +27,10 @@ export class UsersService {
     private readonly audit: AuditLogService,
   ) {}
 
-  async create(dto: CreateUserDto, actorUserId: number | null = null): Promise<UserResponseDto> {
+  async create(
+    dto: CreateUserDto,
+    actorUserId: number | null = null,
+  ): Promise<UserResponseDto> {
     const rounds = parseInt(this.config.get<string>('BCRYPT_ROUNDS', '10'), 10);
     const passwordHash = await bcrypt.hash(dto.password, rounds);
     const user = this.users.create({
@@ -43,8 +46,7 @@ export class UsersService {
         action: AuditAction.USER_CREATE,
         entityType: EntityType.USER,
         entityId: saved.id,
-        performedBy: actorUserId,
-        actor: ActorType.USER,
+        ...actorOf(actorUserId),
       });
       return UserResponseDto.fromEntity(saved);
     } catch (err: any) {
@@ -61,7 +63,9 @@ export class UsersService {
   }
 
   async findOne(id: number): Promise<UserResponseDto> {
-    const user = await this.users.findOne({ where: { id, deletedAt: IsNull() } });
+    const user = await this.users.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
     if (!user) throw new NotFoundException(`User ${id} not found`);
     return UserResponseDto.fromEntity(user);
   }
@@ -85,7 +89,9 @@ export class UsersService {
     dto: UpdateUserDto,
     actorUserId: number | null = null,
   ): Promise<UserResponseDto> {
-    const user = await this.users.findOne({ where: { id, deletedAt: IsNull() } });
+    const user = await this.users.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
     if (!user) throw new NotFoundException(`User ${id} not found`);
     if (dto.fullName !== undefined) user.fullName = dto.fullName;
     if (dto.role !== undefined) user.role = dto.role;
@@ -94,26 +100,32 @@ export class UsersService {
       action: AuditAction.USER_UPDATE,
       entityType: EntityType.USER,
       entityId: saved.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     return UserResponseDto.fromEntity(saved);
   }
 
-  async softDelete(id: number, actorUserId: number | null = null): Promise<void> {
-    const user = await this.users.findOne({ where: { id, deletedAt: IsNull() } });
+  async softDelete(
+    id: number,
+    actorUserId: number | null = null,
+  ): Promise<void> {
+    const user = await this.users.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
     if (!user) throw new NotFoundException(`User ${id} not found`);
     await this.users.softRemove(user);
     await this.audit.record({
       action: AuditAction.USER_DELETE,
       entityType: EntityType.USER,
       entityId: user.id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
   }
 
-  async restore(id: number, actorUserId: number | null = null): Promise<UserResponseDto> {
+  async restore(
+    id: number,
+    actorUserId: number | null = null,
+  ): Promise<UserResponseDto> {
     const user = await this.findOneIncludingDeleted(id);
     if (!user.deletedAt) {
       return UserResponseDto.fromEntity(user);
@@ -124,8 +136,7 @@ export class UsersService {
       action: AuditAction.USER_RESTORE,
       entityType: EntityType.USER,
       entityId: id,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
     });
     return UserResponseDto.fromEntity(reloaded);
   }
@@ -138,12 +149,22 @@ export class UsersService {
   async findByUsernameWithPassword(username: string): Promise<User | null> {
     return this.users.findOne({
       where: { username, deletedAt: IsNull() },
-      select: ['id', 'username', 'email', 'fullName', 'role', 'passwordHash', 'deletedAt'],
+      select: [
+        'id',
+        'username',
+        'email',
+        'fullName',
+        'role',
+        'passwordHash',
+        'deletedAt',
+      ],
     });
   }
 
   async existsAndActive(id: number): Promise<boolean> {
-    const count = await this.users.count({ where: { id, deletedAt: IsNull() } });
+    const count = await this.users.count({
+      where: { id, deletedAt: IsNull() },
+    });
     return count > 0;
   }
 

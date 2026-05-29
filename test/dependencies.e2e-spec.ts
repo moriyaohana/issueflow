@@ -157,7 +157,7 @@ describe('Ticket Dependencies (e2e)', () => {
       .expect(HttpStatus.OK);
     const cascadeRow = audit.body.find(
       (r: any) =>
-        r.metadata?.cascade === true &&
+        r.metadata?.cascade === 'soft' &&
         Array.isArray(r.metadata?.ticketIds) &&
         r.metadata.ticketIds.includes(a.id),
     );

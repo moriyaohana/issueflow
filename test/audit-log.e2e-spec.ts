@@ -29,7 +29,9 @@ describe('Audit log (e2e)', () => {
       .get(`/audit-logs?entityType=PROJECT&entityId=${project.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    expect(projectAudit.body.find((r: any) => r.action === 'PROJECT_CREATE')).toBeTruthy();
+    expect(
+      projectAudit.body.find((r: any) => r.action === 'PROJECT_CREATE'),
+    ).toBeTruthy();
 
     const ticket = await request(ctx.app.getHttpServer())
       .post('/tickets')
@@ -55,7 +57,9 @@ describe('Audit log (e2e)', () => {
       .get(`/audit-logs?entityType=TICKET&entityId=${ticket.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    const update = ticketAudit.body.find((r: any) => r.action === 'TICKET_UPDATE');
+    const update = ticketAudit.body.find(
+      (r: any) => r.action === 'TICKET_UPDATE',
+    );
     expect(update).toBeTruthy();
     expect(update.metadata.statusFrom).toBe('TODO');
     expect(update.metadata.statusTo).toBe('IN_PROGRESS');
@@ -95,7 +99,8 @@ describe('Audit log (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     const cascadeRow = ticketAudit.body.find(
-      (r: any) => r.action === 'TICKET_DELETE' && r.metadata?.cascade === true,
+      (r: any) =>
+        r.action === 'TICKET_DELETE' && r.metadata?.cascade === 'soft',
     );
     expect(cascadeRow).toBeTruthy();
     expect(cascadeRow.metadata.projectId).toBe(project.body.id);
@@ -106,7 +111,8 @@ describe('Audit log (e2e)', () => {
       .expect(200);
     expect(
       commentAudit.body.find(
-        (r: any) => r.action === 'COMMENT_DELETE' && r.metadata?.cascade === true,
+        (r: any) =>
+          r.action === 'COMMENT_DELETE' && r.metadata?.cascade === 'soft',
       ),
     ).toBeTruthy();
   });

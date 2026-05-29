@@ -59,7 +59,7 @@ export class AttachmentsController {
       ticketId,
       file,
       userId: actor.id,
-      actorUserId: actor?.id ?? null,
+      actorUserId: actor.id,
     });
   }
 
@@ -70,6 +70,6 @@ export class AttachmentsController {
     @Param('attachmentId', ParseIntPipe) attachmentId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<void> {
-    await this.attachments.delete(ticketId, attachmentId, actor?.id ?? null);
+    await this.attachments.delete(ticketId, attachmentId, actor.id);
   }
 }

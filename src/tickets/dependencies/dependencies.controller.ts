@@ -32,7 +32,7 @@ export class DependenciesController {
     @Body() dto: AddDependencyDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<void> {
-    await this.deps.add(ticketId, dto.blockedBy, actor?.id ?? null);
+    await this.deps.add(ticketId, dto.blockedBy, actor.id);
   }
 
   @Delete(':blockerId')
@@ -42,6 +42,6 @@ export class DependenciesController {
     @Param('blockerId', ParseIntPipe) blockerId: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<void> {
-    await this.deps.remove(ticketId, blockerId, actor?.id ?? null);
+    await this.deps.remove(ticketId, blockerId, actor.id);
   }
 }

@@ -6,9 +6,9 @@ import { validate } from 'class-validator';
 import { TicketsService } from '../tickets.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { actorOf } from '../../audit-log/audit-log.helpers';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
-import { ActorType } from '../../common/enums/actor-type.enum';
 import { CreateTicketDto } from '../dto/create-ticket.dto';
 import { Ticket } from '../entities/ticket.entity';
 
@@ -86,8 +86,7 @@ export class TicketsCsvService {
       action: AuditAction.TICKET_EXPORT,
       entityType: EntityType.PROJECT,
       entityId: projectId,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
       metadata: { ticketCount: rows.length },
     });
     return csv;
@@ -132,8 +131,7 @@ export class TicketsCsvService {
       action: AuditAction.TICKET_IMPORT,
       entityType: EntityType.PROJECT,
       entityId: projectId,
-      performedBy: actorUserId,
-      actor: ActorType.USER,
+      ...actorOf(actorUserId),
       metadata: { created, failed: errors.length },
     });
     return { created, failed: errors.length, errors };
