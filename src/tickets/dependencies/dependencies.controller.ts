@@ -11,7 +11,10 @@ import {
 } from '@nestjs/common';
 import { DependenciesService } from './dependencies.service';
 import { AddDependencyDto } from './dto/add-dependency.dto';
-import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../../common/decorators/current-user.decorator';
 
 @Controller('tickets/:ticketId/dependencies')
 export class DependenciesController {

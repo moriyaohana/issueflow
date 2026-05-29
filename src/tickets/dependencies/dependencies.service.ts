@@ -36,11 +36,16 @@ export class DependenciesService {
       this.tickets.findOne({ where: { id: blockerId, deletedAt: IsNull() } }),
     ]);
     if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
-    if (!blocker) throw new NotFoundException(`Blocker ticket ${blockerId} not found`);
+    if (!blocker)
+      throw new NotFoundException(`Blocker ticket ${blockerId} not found`);
     if (ticket.projectId !== blocker.projectId) {
-      throw new BadRequestException('Dependencies must be within the same project');
+      throw new BadRequestException(
+        'Dependencies must be within the same project',
+      );
     }
-    const existing = await this.deps.findOne({ where: { ticketId, blockerId } });
+    const existing = await this.deps.findOne({
+      where: { ticketId, blockerId },
+    });
     if (existing) {
       throw new ConflictException('Dependency already exists');
     }
@@ -55,7 +60,9 @@ export class DependenciesService {
     });
   }
 
-  async list(ticketId: number): Promise<{ id: number; title: string; status: TicketStatus }[]> {
+  async list(
+    ticketId: number,
+  ): Promise<{ id: number; title: string; status: TicketStatus }[]> {
     const ticket = await this.tickets.findOne({
       where: { id: ticketId, deletedAt: IsNull() },
     });
@@ -65,7 +72,11 @@ export class DependenciesService {
     const blockers = await this.tickets.find({
       where: { id: In(rows.map((r) => r.blockerId)) },
     });
-    return blockers.map((b) => ({ id: b.id, title: b.title, status: b.status }));
+    return blockers.map((b) => ({
+      id: b.id,
+      title: b.title,
+      status: b.status,
+    }));
   }
 
   async remove(
@@ -111,12 +122,30 @@ export class DependenciesService {
   }
 
   /** Cascade hook fired by ticket soft-delete. */
-  async cascadeHardDeleteDependencies(ticketIds: number[]): Promise<void> {
+  async cascadeHardDeleteDependencies(
+    ticketIds: number[],
+    actorUserId: number | null = null,
+  ): Promise<void> {
     if (ticketIds.length === 0) return;
-    await this.deps
-      .createQueryBuilder()
-      .delete()
-      .where('"ticketId" IN (:...ids) OR "blockerId" IN (:...ids)', { ids: ticketIds })
-      .execute();
+    const rows = await this.deps
+      .createQueryBuilder('d')
+      .select(['d.id', 'd.ticketId', 'd.blockerId'])
+      .where('d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)', {
+        ids: ticketIds,
+      })
+      .getMany();
+    if (rows.length === 0) return;
+    await this.deps.delete({ id: In(rows.map((r) => r.id)) });
+    const actor = actorUserId == null ? ActorType.SYSTEM : ActorType.USER;
+    for (const r of rows) {
+      await this.audit.record({
+        action: AuditAction.DEPENDENCY_DELETE,
+        entityType: EntityType.DEPENDENCY,
+        entityId: r.id,
+        performedBy: actorUserId,
+        actor,
+        metadata: { cascade: true, ticketIds },
+      });
+    }
   }
 }

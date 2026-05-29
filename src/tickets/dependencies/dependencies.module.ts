@@ -8,7 +8,10 @@ import { TicketsService } from '../tickets.service';
 import { TicketsModule } from '../tickets.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TicketDependency, Ticket]), TicketsModule],
+  imports: [
+    TypeOrmModule.forFeature([TicketDependency, Ticket]),
+    TicketsModule,
+  ],
   providers: [DependenciesService],
   controllers: [DependenciesController],
   exports: [DependenciesService],
@@ -21,10 +24,12 @@ export class DependenciesModule implements OnModuleInit {
 
   onModuleInit(): void {
     this.tickets.registerBlockersResolver({
-      assertBlockersResolvedForDone: (id) => this.deps.assertBlockersResolvedForDone(id),
+      assertBlockersResolvedForDone: (id) =>
+        this.deps.assertBlockersResolvedForDone(id),
     });
     this.tickets.registerCascadeTarget({
-      cascadeHardDeleteDependencies: (ids) => this.deps.cascadeHardDeleteDependencies(ids),
+      cascadeHardDeleteDependencies: (ids, actorUserId) =>
+        this.deps.cascadeHardDeleteDependencies(ids, actorUserId),
     });
   }
 }

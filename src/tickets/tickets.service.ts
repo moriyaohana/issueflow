@@ -26,7 +26,10 @@ export interface TicketCascadeTarget {
     ticketIds: number[],
     actorUserId: number | null,
   ): Promise<void>;
-  cascadeHardDeleteDependencies(ticketIds: number[]): Promise<void>;
+  cascadeHardDeleteDependencies(
+    ticketIds: number[],
+    actorUserId: number | null,
+  ): Promise<void>;
   cascadeHardDeleteAttachments(
     ticketIds: number[],
     actorUserId: number | null,
@@ -361,7 +364,7 @@ export class TicketsService {
       await this.cascade.cascadeHardDeleteComments(ticketIds, actorUserId);
     }
     if (this.cascade.cascadeHardDeleteDependencies) {
-      await this.cascade.cascadeHardDeleteDependencies(ticketIds);
+      await this.cascade.cascadeHardDeleteDependencies(ticketIds, actorUserId);
     }
     if (this.cascade.cascadeHardDeleteAttachments) {
       await this.cascade.cascadeHardDeleteAttachments(ticketIds, actorUserId);

@@ -1,3 +1,4 @@
+import { HttpStatus } from '@nestjs/common';
 import * as request from 'supertest';
 import { createTestApp, TestAppContext } from './test-app.factory';
 import { UserRole } from '../src/common/enums/user-role.enum';
@@ -133,6 +134,36 @@ describe('Ticket Dependencies (e2e)', () => {
       .set('If-Match', reviewing.headers.etag)
       .send({ status: 'DONE' })
       .expect(200);
+  });
+
+  it('soft-deleting a ticket writes a DEPENDENCY_DELETE audit row per cascaded dependency', async () => {
+    const a = await makeTicket();
+    const b = await makeTicket();
+    await request(ctx.app.getHttpServer())
+      .post(`/tickets/${a.id}/dependencies`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ blockedBy: b.id })
+      .expect(HttpStatus.OK);
+
+    await request(ctx.app.getHttpServer())
+      .delete(`/tickets/${a.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('If-Match', a.etag)
+      .expect(HttpStatus.OK);
+
+    const audit = await request(ctx.app.getHttpServer())
+      .get('/audit-logs?entityType=DEPENDENCY&action=DEPENDENCY_DELETE')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(HttpStatus.OK);
+    const cascadeRow = audit.body.find(
+      (r: any) =>
+        r.metadata?.cascade === true &&
+        Array.isArray(r.metadata?.ticketIds) &&
+        r.metadata.ticketIds.includes(a.id),
+    );
+    expect(cascadeRow).toBeTruthy();
+    expect(cascadeRow.actor).toBe('USER');
+    expect(cascadeRow.performedBy).toBe(adminUserId);
   });
 
   it('soft-deleted ticket rejects add with 404', async () => {
