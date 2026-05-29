@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   createParamDecorator,
   ExecutionContext,
   HttpException,
@@ -8,12 +9,15 @@ import {
 /**
  * Param decorator that extracts the numeric version from the `If-Match`
  * request header used for HTTP optimistic concurrency. The header is expected
- * to be a weak ETag of the form `W/"<integer>"` (the surrounding quotes and
- * the `W/` prefix are both tolerated and stripped).
+ * to be a weak ETag of the form `W/"<integer>"` (the `W/` prefix is optional,
+ * but the double-quotes around the integer are required).
  *
- * Throws 428 Precondition Required when the header is missing or
- * non-numeric — mutating routes that use this decorator therefore enforce
- * the presence of an explicit version expectation.
+ * Behaviour:
+ *   - Missing header   → 428 Precondition Required (mutating routes MUST opt
+ *     into optimistic concurrency by sending the header).
+ *   - Malformed header → 400 Bad Request, per RFC 7232 §3.1 — a syntactically
+ *     invalid `If-Match` is a client error, not a missing precondition.
+ *   - Well-formed      → the captured integer is returned to the handler.
  */
 export const IfMatch = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): number => {
@@ -25,15 +29,12 @@ export const IfMatch = createParamDecorator(
         HttpStatus.PRECONDITION_REQUIRED,
       );
     }
-    // Strip weak prefix W/ and surrounding double-quotes.
-    const cleaned = raw.replace(/^W\//, '').replace(/^"|"$/g, '');
-    const n = parseInt(cleaned, 10);
-    if (!Number.isInteger(n)) {
-      throw new HttpException(
-        'If-Match must be a numeric ETag',
-        HttpStatus.PRECONDITION_REQUIRED,
-      );
+    // Anchor the whole header: optional weak prefix, then a quoted integer.
+    // Anything else (`"12abc"`, `W/"123`, bare `123`) is a client-format error.
+    const match = raw.match(/^(?:W\/)?"(\d+)"$/);
+    if (!match) {
+      throw new BadRequestException('Malformed If-Match header');
     }
-    return n;
+    return parseInt(match[1], 10);
   },
 );

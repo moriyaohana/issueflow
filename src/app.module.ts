@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { buildTypeOrmOptions } from './config/typeorm.config';
 import { HealthController } from './health.controller';
 import { UsersModule } from './users/users.module';
@@ -17,6 +17,7 @@ import { EscalationModule } from './tickets/escalation/escalation.module';
 import { AutoAssignModule } from './tickets/auto-assign/auto-assign.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ETagInterceptor } from './common/interceptors/etag.interceptor';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
@@ -51,6 +52,10 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     // ETag header instead, so optimistic concurrency is carried purely over
     // HTTP headers.
     { provide: APP_INTERCEPTOR, useClass: ETagInterceptor },
+    // Catch-all exception filter: passes HttpException through unchanged,
+    // and renders any other thrown value as a generic 500 with a logged
+    // stack so we never leak internal error strings over the wire.
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
   ],
 })
 export class AppModule {}
