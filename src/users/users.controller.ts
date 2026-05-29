@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -18,6 +17,7 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/user-role.enum';
 
 @Controller('users')
@@ -36,36 +36,28 @@ export class UsersController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.ADMIN)
   create(
     @Body() dto: CreateUserDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<UserResponseDto> {
-    this.assertCanAssignRole(dto.role, actor);
-    return this.users.create(dto, actor.id);
+    return this.users.create(dto, actor);
   }
 
   @Post('update/:userId')
   @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.ADMIN)
   update(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() dto: UpdateUserDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<UserResponseDto> {
-    this.assertCanAssignRole(dto.role, actor);
-    return this.users.update(userId, dto, actor.id);
-  }
-
-  private assertCanAssignRole(
-    role: UserRole | undefined,
-    actor: CurrentUserPayload,
-  ): void {
-    if (role === UserRole.ADMIN && actor.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('Only admins can assign the ADMIN role');
-    }
+    return this.users.update(userId, dto, actor);
   }
 
   @Delete(':userId')
   @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.ADMIN)
   async delete(
     @Param('userId', ParseIntPipe) userId: number,
     @CurrentUser() actor: CurrentUserPayload,

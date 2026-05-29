@@ -41,23 +41,29 @@ export class CommentsController {
   @Patch(':commentId')
   @HttpCode(HttpStatus.OK)
   update(
-    @Param('ticketId', ParseIntPipe) _ticketId: number,
+    @Param('ticketId', ParseIntPipe) ticketId: number,
     @Param('commentId', ParseIntPipe) commentId: number,
     @Body() dto: UpdateCommentDto,
     @CurrentUser() actor: CurrentUserPayload,
     @IfMatch() expectedVersion: number,
   ) {
-    return this.comments.update(commentId, dto, actor.id, expectedVersion);
+    return this.comments.update(
+      ticketId,
+      commentId,
+      dto,
+      actor,
+      expectedVersion,
+    );
   }
 
   @Delete(':commentId')
   @HttpCode(HttpStatus.OK)
   async delete(
-    @Param('ticketId', ParseIntPipe) _ticketId: number,
+    @Param('ticketId', ParseIntPipe) ticketId: number,
     @Param('commentId', ParseIntPipe) commentId: number,
     @CurrentUser() actor: CurrentUserPayload,
     @IfMatch() expectedVersion: number,
   ): Promise<void> {
-    await this.comments.delete(commentId, actor.id, expectedVersion);
+    await this.comments.delete(ticketId, commentId, actor, expectedVersion);
   }
 }

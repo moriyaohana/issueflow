@@ -135,9 +135,12 @@ describe('Users (e2e)', () => {
       .expect(HttpStatus.UNAUTHORIZED);
   });
 
-  it('forbids a non-admin from creating a user with the ADMIN role', async () => {
+  it('forbids a non-admin from creating any user (writes are admin-only)', async () => {
     const dev = await ctx.obtainToken({ role: UserRole.DEVELOPER });
 
+    // Both attempts — escalating to ADMIN and the "innocent" DEVELOPER case —
+    // are forbidden now that create is locked behind @Roles(ADMIN). The
+    // ADMIN-promotion check still lives in the service for non-HTTP callers.
     await request(ctx.app.getHttpServer())
       .post('/users')
       .set('Authorization', `Bearer ${dev.accessToken}`)
@@ -160,10 +163,10 @@ describe('Users (e2e)', () => {
         role: 'DEVELOPER',
         password: 'secret-pw-12345',
       })
-      .expect(HttpStatus.OK);
+      .expect(HttpStatus.FORBIDDEN);
   });
 
-  it('forbids a non-admin from promoting any user to the ADMIN role', async () => {
+  it('forbids a non-admin from updating any user (writes are admin-only)', async () => {
     const dev = await ctx.obtainToken({ role: UserRole.DEVELOPER });
 
     const target = await request(ctx.app.getHttpServer())
@@ -178,22 +181,25 @@ describe('Users (e2e)', () => {
       })
       .expect(HttpStatus.OK);
 
+    // ADMIN-role escalation is rejected.
     await request(ctx.app.getHttpServer())
       .post(`/users/update/${target.body.id}`)
       .set('Authorization', `Bearer ${dev.accessToken}`)
       .send({ role: 'ADMIN' })
       .expect(HttpStatus.FORBIDDEN);
 
+    // A "harmless" rename is also rejected — non-admins have no write access.
     await request(ctx.app.getHttpServer())
       .post(`/users/update/${target.body.id}`)
       .set('Authorization', `Bearer ${dev.accessToken}`)
       .send({ fullName: 'Renamed By Dev' })
-      .expect(HttpStatus.OK);
+      .expect(HttpStatus.FORBIDDEN);
 
     const after = await request(ctx.app.getHttpServer())
       .get(`/users/${target.body.id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(HttpStatus.OK);
     expect(after.body.role).toBe('DEVELOPER');
+    expect(after.body.fullName).toBe('Promo Target');
   });
 });

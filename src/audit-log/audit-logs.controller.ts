@@ -4,8 +4,11 @@ import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { ActorType } from '../common/enums/actor-type.enum';
 import { AuditLog } from './entities/audit-log.entity';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '../common/enums/user-role.enum';
 
 @Controller('audit-logs')
+@Roles(UserRole.ADMIN)
 export class AuditLogsController {
   constructor(private readonly audit: AuditLogService) {}
 

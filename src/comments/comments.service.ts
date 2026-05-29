@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   PreconditionFailedException,
@@ -18,6 +19,17 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
+import { UserRole } from '../common/enums/user-role.enum';
+
+/**
+ * Minimal authenticated-caller shape used to authorise comment writes. We
+ * accept the actor up front so the service can enforce IDOR + ownership
+ * policy without reaching into request context.
+ */
+export interface CommentActor {
+  id: number;
+  role: UserRole;
+}
 
 export interface CommentResponse {
   id: number;
@@ -96,9 +108,10 @@ export class CommentsService {
    * loud at the version check rather than serialising on a lock.
    */
   async update(
+    routeTicketId: number,
     commentId: number,
     dto: UpdateCommentDto,
-    actorUserId: number | null,
+    actor: CommentActor | null,
     expectedVersion: number,
   ): Promise<CommentResponse> {
     const response = await this.dataSource.transaction(async (manager) => {
@@ -107,6 +120,21 @@ export class CommentsService {
         .findOne({ where: { id: commentId } });
       if (!comment)
         throw new NotFoundException(`Comment ${commentId} not found`);
+      // Route-vs-row consistency: don't leak "comment 5 exists, just under a
+      // different ticket" — surface as 404 so a caller probing the wrong
+      // ticket can't enumerate comment ids.
+      if (comment.ticketId !== routeTicketId) {
+        throw new NotFoundException(`Comment ${commentId} not found`);
+      }
+      // Ownership: only the author or an ADMIN may mutate a comment. Internal
+      // callers pass `actor = null` (e.g. cascade flows) and are trusted.
+      if (
+        actor &&
+        comment.authorId !== actor.id &&
+        actor.role !== UserRole.ADMIN
+      ) {
+        throw new ForbiddenException('Not the author of this comment');
+      }
       if (expectedVersion !== comment.version) {
         throw new PreconditionFailedException({
           message: 'Version mismatch',
@@ -144,18 +172,31 @@ export class CommentsService {
       action: AuditAction.UPDATE,
       entityType: EntityType.COMMENT,
       entityId: commentId,
-      ...actorOf(actorUserId),
+      ...actorOf(actor?.id ?? null),
     });
     return response;
   }
 
   async delete(
+    routeTicketId: number,
     commentId: number,
-    actorUserId: number | null,
+    actor: CommentActor | null,
     expectedVersion: number,
   ): Promise<void> {
     const comment = await this.comments.findOne({ where: { id: commentId } });
     if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
+    // Route-vs-row consistency: a comment that belongs to a different ticket
+    // must look like a miss, not a 403/412 (which would leak existence).
+    if (comment.ticketId !== routeTicketId) {
+      throw new NotFoundException(`Comment ${commentId} not found`);
+    }
+    if (
+      actor &&
+      comment.authorId !== actor.id &&
+      actor.role !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException('Not the author of this comment');
+    }
     if (expectedVersion !== comment.version) {
       throw new PreconditionFailedException({
         message: 'Version mismatch',
@@ -167,7 +208,7 @@ export class CommentsService {
       action: AuditAction.DELETE,
       entityType: EntityType.COMMENT,
       entityId: commentId,
-      ...actorOf(actorUserId),
+      ...actorOf(actor?.id ?? null),
     });
   }
 

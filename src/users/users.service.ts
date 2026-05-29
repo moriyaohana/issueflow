@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,6 +16,18 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { actorOf } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
+import { UserRole } from '../common/enums/user-role.enum';
+
+/**
+ * Minimal shape of the authenticated caller required to authorise role-bearing
+ * writes. Accepting an `Actor` (rather than just an id) keeps the policy in
+ * the service while letting controllers forward whatever JWT payload they
+ * already have.
+ */
+export interface Actor {
+  id: number;
+  role: UserRole;
+}
 
 // Postgres unique-violation error code; surfaced as 409 instead of 500.
 const PG_UNIQUE_VIOLATION = '23505';
@@ -29,8 +42,15 @@ export class UsersService {
 
   async create(
     dto: CreateUserDto,
-    actorUserId: number | null = null,
+    actor: Actor | null = null,
   ): Promise<UserResponseDto> {
+    // Role-assignment policy lives in the service so non-HTTP callers can't
+    // bypass it. Internal callers (seed scripts, the e2e test factory) pass
+    // `actor = null` and are trusted; only HTTP requests forward a real actor.
+    if (actor && dto.role === UserRole.ADMIN && actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admins can assign the ADMIN role');
+    }
+    const actorUserId = actor?.id ?? null;
     const rounds = parseInt(this.config.get<string>('BCRYPT_ROUNDS', '10'), 10);
     const passwordHash = await bcrypt.hash(dto.password, rounds);
     const user = this.users.create({
@@ -87,8 +107,21 @@ export class UsersService {
   async update(
     id: number,
     dto: UpdateUserDto,
-    actorUserId: number | null = null,
+    actor: Actor | null = null,
   ): Promise<UserResponseDto> {
+    // Role writes are admin-only, and an admin cannot change their own role
+    // (prevents an ADMIN demoting themselves and locking the system out).
+    // Non-role fields (e.g. `fullName`) are unaffected — an ADMIN can still
+    // rename themselves.
+    if (actor && dto.role !== undefined) {
+      if (actor.role !== UserRole.ADMIN) {
+        throw new ForbiddenException('Only admins can change a user role');
+      }
+      if (id === actor.id) {
+        throw new ForbiddenException('Admins cannot change their own role');
+      }
+    }
+    const actorUserId = actor?.id ?? null;
     const user = await this.users.findOne({
       where: { id, deletedAt: IsNull() },
     });

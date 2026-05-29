@@ -104,12 +104,12 @@ describe('CommentsService', () => {
     const txCommentRepo = dataSource.__tx.txCommentRepo;
     const c1 = makeComment({ version: 1 });
     txCommentRepo.findOne.mockResolvedValueOnce(c1);
-    await service.update(1, { content: 'first' }, null, 1);
+    await service.update(1, 1, { content: 'first' }, null, 1);
     expect(c1.version).toBe(2);
 
     const c2 = makeComment({ version: 2, content: 'first' });
     txCommentRepo.findOne.mockResolvedValueOnce(c2);
-    await service.update(1, { content: 'second' }, null, 2);
+    await service.update(1, 1, { content: 'second' }, null, 2);
     expect(c2.version).toBe(3);
   });
 
@@ -117,7 +117,7 @@ describe('CommentsService', () => {
     const txCommentRepo = dataSource.__tx.txCommentRepo;
     txCommentRepo.findOne.mockResolvedValueOnce(makeComment({ version: 3 }));
     await expect(
-      service.update(1, { content: 'x' }, null, 1),
+      service.update(1, 1, { content: 'x' }, null, 1),
     ).rejects.toBeInstanceOf(PreconditionFailedException);
   });
 
@@ -125,21 +125,21 @@ describe('CommentsService', () => {
     const txCommentRepo = dataSource.__tx.txCommentRepo;
     txCommentRepo.findOne.mockResolvedValueOnce(null);
     await expect(
-      service.update(1, { content: 'x' }, null, 1),
+      service.update(1, 1, { content: 'x' }, null, 1),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('update() no longer acquires a pessimistic row lock', async () => {
     const txCommentRepo = dataSource.__tx.txCommentRepo;
     txCommentRepo.findOne.mockResolvedValueOnce(makeComment({ version: 1 }));
-    await service.update(1, { content: 'x' }, null, 1);
+    await service.update(1, 1, { content: 'x' }, null, 1);
     // The new path uses Repository.findOne, never createQueryBuilder().setLock.
     expect((txCommentRepo as any).createQueryBuilder).toBeUndefined();
   });
 
   it('delete() throws PreconditionFailedException when expectedVersion is stale', async () => {
     commentsRepo.findOne.mockResolvedValueOnce(makeComment({ version: 5 }));
-    await expect(service.delete(1, null, 1)).rejects.toBeInstanceOf(
+    await expect(service.delete(1, 1, null, 1)).rejects.toBeInstanceOf(
       PreconditionFailedException,
     );
     expect(commentsRepo.delete).not.toHaveBeenCalled();
@@ -147,7 +147,7 @@ describe('CommentsService', () => {
 
   it('delete() succeeds when expectedVersion matches', async () => {
     commentsRepo.findOne.mockResolvedValueOnce(makeComment({ version: 2 }));
-    await service.delete(1, null, 2);
+    await service.delete(1, 1, null, 2);
     expect(commentsRepo.delete).toHaveBeenCalledWith({ id: 1 });
   });
 });
