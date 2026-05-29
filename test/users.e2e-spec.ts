@@ -134,4 +134,66 @@ describe('Users (e2e)', () => {
       .get('/users')
       .expect(HttpStatus.UNAUTHORIZED);
   });
+
+  it('forbids a non-admin from creating a user with the ADMIN role', async () => {
+    const dev = await ctx.obtainToken({ role: UserRole.DEVELOPER });
+
+    await request(ctx.app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${dev.accessToken}`)
+      .send({
+        username: 'wannabe-admin',
+        email: 'wannabe-admin@example.com',
+        fullName: 'Wannabe Admin',
+        role: 'ADMIN',
+        password: 'secret-pw-12345',
+      })
+      .expect(HttpStatus.FORBIDDEN);
+
+    await request(ctx.app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${dev.accessToken}`)
+      .send({
+        username: 'regular-dev',
+        email: 'regular-dev@example.com',
+        fullName: 'Regular Dev',
+        role: 'DEVELOPER',
+        password: 'secret-pw-12345',
+      })
+      .expect(HttpStatus.OK);
+  });
+
+  it('forbids a non-admin from promoting any user to the ADMIN role', async () => {
+    const dev = await ctx.obtainToken({ role: UserRole.DEVELOPER });
+
+    const target = await request(ctx.app.getHttpServer())
+      .post('/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        username: 'promo-target',
+        email: 'promo-target@example.com',
+        fullName: 'Promo Target',
+        role: 'DEVELOPER',
+        password: 'secret-pw-12345',
+      })
+      .expect(HttpStatus.OK);
+
+    await request(ctx.app.getHttpServer())
+      .post(`/users/update/${target.body.id}`)
+      .set('Authorization', `Bearer ${dev.accessToken}`)
+      .send({ role: 'ADMIN' })
+      .expect(HttpStatus.FORBIDDEN);
+
+    await request(ctx.app.getHttpServer())
+      .post(`/users/update/${target.body.id}`)
+      .set('Authorization', `Bearer ${dev.accessToken}`)
+      .send({ fullName: 'Renamed By Dev' })
+      .expect(HttpStatus.OK);
+
+    const after = await request(ctx.app.getHttpServer())
+      .get(`/users/${target.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(HttpStatus.OK);
+    expect(after.body.role).toBe('DEVELOPER');
+  });
 });

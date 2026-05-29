@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -17,6 +18,7 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
+import { UserRole } from '../common/enums/user-role.enum';
 
 @Controller('users')
 export class UsersController {
@@ -38,6 +40,7 @@ export class UsersController {
     @Body() dto: CreateUserDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<UserResponseDto> {
+    this.assertCanAssignRole(dto.role, actor);
     return this.users.create(dto, actor.id);
   }
 
@@ -48,7 +51,17 @@ export class UsersController {
     @Body() dto: UpdateUserDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<UserResponseDto> {
+    this.assertCanAssignRole(dto.role, actor);
     return this.users.update(userId, dto, actor.id);
+  }
+
+  private assertCanAssignRole(
+    role: UserRole | undefined,
+    actor: CurrentUserPayload,
+  ): void {
+    if (role === UserRole.ADMIN && actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admins can assign the ADMIN role');
+    }
   }
 
   @Delete(':userId')
