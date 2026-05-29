@@ -33,7 +33,7 @@ checkout works without further edits. Tunable values:
 | `DB_PASSWORD` | `issueflow` | Postgres password |
 | `DB_NAME` | `issueflow` | Postgres database |
 | `JWT_SECRET` | `dev-secret-change-me` | HMAC secret for JWTs |
-| `JWT_EXPIRES_IN` | `3600s` | JWT lifetime |
+| `JWT_EXPIRES_IN` | `3600` | JWT lifetime in seconds (integer) |
 | `BCRYPT_ROUNDS` | `10` | bcrypt cost factor |
 
 ## 4. Apply migrations (production / dev runtime)

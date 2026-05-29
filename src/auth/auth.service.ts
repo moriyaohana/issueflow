@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -40,8 +37,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     const jti = uuidv4();
-    const expiresInSetting = this.config.get<string>('JWT_EXPIRES_IN', '3600s');
-    const expiresInSeconds = this.toSeconds(expiresInSetting);
+    const expiresInSeconds = this.config.get<number>('JWT_EXPIRES_IN', 3600);
     const accessToken = await this.jwt.signAsync(
       { sub: user.id, username: user.username, role: user.role, jti },
       { expiresIn: expiresInSeconds },
@@ -63,10 +59,12 @@ export class AuthService {
     };
   }
 
-  async logout(jti: string, userId: number, expirySeconds?: number): Promise<void> {
-    const expiresAt = expirySeconds
-      ? new Date(expirySeconds * 1000)
-      : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  async logout(
+    jti: string,
+    userId: number,
+    expirySeconds: number,
+  ): Promise<void> {
+    const expiresAt = new Date(expirySeconds * 1000);
     await this.invalidated.add(jti, expiresAt);
     await this.audit.record({
       action: AuditAction.LOGOUT,
@@ -75,22 +73,5 @@ export class AuthService {
       performedBy: userId,
       actor: ActorType.USER,
     });
-  }
-
-  private toSeconds(value: string): number {
-    const match = /^(\d+)\s*(s|m|h|d)?$/.exec(value.trim());
-    if (!match) return parseInt(value, 10) || 3600;
-    const n = parseInt(match[1], 10);
-    const unit = match[2] || 's';
-    switch (unit) {
-      case 'm':
-        return n * 60;
-      case 'h':
-        return n * 3600;
-      case 'd':
-        return n * 86400;
-      default:
-        return n;
-    }
   }
 }

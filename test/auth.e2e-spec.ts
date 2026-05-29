@@ -1,7 +1,9 @@
 import * as request from 'supertest';
+import { HttpStatus } from '@nestjs/common';
 import { createTestApp, TestAppContext } from './test-app.factory';
 import { UserRole } from '../src/common/enums/user-role.enum';
 import { UsersService } from '../src/users/users.service';
+import { InvalidatedTokensService } from '../src/auth/invalidated-tokens.service';
 
 describe('Auth (e2e)', () => {
   let ctx: TestAppContext;
@@ -38,6 +40,33 @@ describe('Auth (e2e)', () => {
       .get('/auth/me')
       .set('Authorization', `Bearer ${t.accessToken}`)
       .expect(401);
+  });
+
+  it('logout invalidates the exact-jti token until its real expiry', async () => {
+    const t = await ctx.obtainToken({ role: UserRole.DEVELOPER });
+    // Decode the JWT payload (middle segment, base64url) to read the real `exp`/`jti`.
+    const [, payloadSegment] = t.accessToken.split('.');
+    const payloadJson = Buffer.from(payloadSegment, 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson) as { exp: number; jti: string };
+    expect(typeof payload.exp).toBe('number');
+    expect(typeof payload.jti).toBe('string');
+
+    await request(ctx.app.getHttpServer())
+      .post('/auth/logout')
+      .set('Authorization', `Bearer ${t.accessToken}`)
+      .expect(HttpStatus.OK);
+
+    // Subsequent calls with the same token must be rejected.
+    await request(ctx.app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${t.accessToken}`)
+      .expect(HttpStatus.UNAUTHORIZED);
+
+    // The deny-list entry must persist until the token's real `exp`, not 24h
+    // from now (which used to be the hand-rolled fallback).
+    const invalidated = ctx.app.get(InvalidatedTokensService);
+    const stillBlocked = await invalidated.has(payload.jti);
+    expect(stillBlocked).toBe(true);
   });
 
   it('soft-deleted user cannot use a previously-issued token', async () => {

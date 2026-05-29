@@ -35,9 +35,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    *      happen in this system but defended for safety).
    *   3. The user was soft-deleted after the token was issued.
    */
-  async validate(payload: JwtPayload): Promise<{ id: number; username: string; role: string; jti: string }> {
+  async validate(payload: JwtPayload): Promise<{
+    id: number;
+    username: string;
+    role: string;
+    jti: string;
+    exp: number;
+  }> {
     if (!payload?.jti) {
       throw new UnauthorizedException('Token missing jti');
+    }
+    if (typeof payload.exp !== 'number') {
+      throw new UnauthorizedException('Token missing exp');
     }
     if (await this.invalidated.has(payload.jti)) {
       throw new UnauthorizedException('Token has been revoked');
@@ -51,6 +60,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       username: payload.username,
       role: payload.role,
       jti: payload.jti,
+      exp: payload.exp,
     };
   }
 }

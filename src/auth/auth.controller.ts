@@ -10,7 +10,10 @@ import {
 import { AuthService, LoginResult } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { Public } from '../common/decorators/public.decorator';
-import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../common/decorators/current-user.decorator';
 import { UsersService } from '../users/users.service';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 
@@ -35,7 +38,7 @@ export class AuthController {
     if (!user?.jti) {
       throw new UnauthorizedException();
     }
-    await this.auth.logout(user.jti, user.id);
+    await this.auth.logout(user.jti, user.id, user.exp);
     return { ok: true };
   }
 
