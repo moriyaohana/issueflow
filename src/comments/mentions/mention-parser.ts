@@ -2,7 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { UsersService } from '../../users/users.service';
 import { User } from '../../users/entities/user.entity';
 
-const MENTION_REGEX = /@([a-zA-Z0-9_]+)/g;
+// Mention matcher:
+//   - `(?:^|[^\p{L}\p{N}_])` anchors a left-side word boundary: the `@` must
+//     sit at the start of input or follow a non-letter / non-digit / non-`_`.
+//     This deliberately blocks tokens inside identifiers like `email@user` —
+//     a literal lookbehind (`(?<![\p{L}\p{N}_])`) would be equivalent and is
+//     available in Node 18+, but the explicit alternation is more portable
+//     for tooling that still parses the regex with older engines.
+//   - The capture group accepts unicode letters / digits, `_`, and `-` so
+//     handles like `@josé` and `@jane-doe` resolve, not just ASCII.
+// Consumers must read `match[1]` (the captured username) — `match[0]` would
+// include the boundary character.
+const MENTION_REGEX = /(?:^|[^\p{L}\p{N}_])@([\p{L}\p{N}_\-]+)/gu;
 
 /**
  * Wire-safe projection of a `User` returned to comment callers. `email` and

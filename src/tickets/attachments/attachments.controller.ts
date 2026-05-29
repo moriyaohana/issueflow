@@ -19,14 +19,8 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { ALLOWED_ATTACHMENT_MIME_TYPES } from '../../common/enums/attachment-mime-type.enum';
-
-const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-// Allowlist values are static enum strings (e.g. "image/png"); the only regex
-// metachar in scope is "/", so a plain alternation is safe — no escaping needed.
-const ALLOWED_ATTACHMENT_MIME_TYPE_REGEX = new RegExp(
-  `^(?:${ALLOWED_ATTACHMENT_MIME_TYPES.join('|')})$`,
-);
+import { MAX_UPLOAD_BYTES } from '../../common/constants/upload';
+import { ALLOWED_ATTACHMENT_MIME_TYPE_REGEX } from '../../common/validators/attachment-mime.validator';
 
 @Controller('tickets/:ticketId/attachments')
 export class AttachmentsController {
@@ -37,18 +31,20 @@ export class AttachmentsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: MAX_ATTACHMENT_SIZE },
+      limits: { fileSize: MAX_UPLOAD_BYTES },
     }),
   )
   async upload(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @UploadedFile(
+      // No `skipMagicNumbersValidation` — we want `FileTypeValidator` to
+      // inspect the file signature instead of trusting the client-supplied
+      // `Content-Type` header, so a renamed `.exe` can't pass as `image/png`.
       new ParseFilePipe({
         fileIsRequired: true,
         validators: [
           new FileTypeValidator({
             fileType: ALLOWED_ATTACHMENT_MIME_TYPE_REGEX,
-            skipMagicNumbersValidation: true,
           }),
         ],
       }),
@@ -59,7 +55,6 @@ export class AttachmentsController {
     const saved = await this.attachments.upload({
       ticketId,
       file,
-      userId: actor.id,
       actorUserId: actor.id,
     });
     // README documents `{id, ticketId, filename, contentType}` only — the

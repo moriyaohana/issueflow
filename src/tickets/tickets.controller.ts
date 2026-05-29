@@ -22,6 +22,7 @@ import { Response } from 'express';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
+import { ImportTicketsDto } from './dto/import-tickets.dto';
 import { TicketResponseDto } from './dto/ticket-response.dto';
 import { TicketDeletedResponseDto } from './dto/ticket-deleted-response.dto';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -31,18 +32,17 @@ import {
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
 import { IfMatch } from '../common/decorators/if-match.decorator';
+import { MAX_UPLOAD_BYTES } from '../common/constants/upload';
 import {
   TicketsCsvService,
   ImportResult,
 } from './import-export/tickets-csv.service';
 
-const MAX_IMPORT_SIZE = 10 * 1024 * 1024;
-
 @Controller('tickets')
 export class TicketsController {
   constructor(
     private readonly tickets: TicketsService,
-    private readonly csvSvc: TicketsCsvService,
+    private readonly csv: TicketsCsvService,
   ) {}
 
   // Static segments are declared before `:ticketId` so they aren't shadowed
@@ -62,7 +62,7 @@ export class TicketsController {
     @CurrentUser() actor: CurrentUserPayload,
     @Res() res: Response,
   ): Promise<void> {
-    const csv = await this.csvSvc.export(projectId, actor.id);
+    const csv = await this.csv.export(projectId, actor.id);
     res
       .status(HttpStatus.OK)
       .header('Content-Type', 'text/csv')
@@ -78,7 +78,7 @@ export class TicketsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: MAX_IMPORT_SIZE },
+      limits: { fileSize: MAX_UPLOAD_BYTES },
     }),
   )
   async import(
@@ -94,10 +94,14 @@ export class TicketsController {
       }),
     )
     file: Express.Multer.File,
-    @Body('projectId', ParseIntPipe) projectId: number,
+    // Multer stuffs all non-file form parts into `req.body` as strings, so the
+    // DTO uses `@Type(() => Number)` to coerce `projectId` before validation.
+    // Routing through a DTO (rather than `@Body('projectId', ParseIntPipe)`)
+    // lets the global `forbidNonWhitelisted` rule reject stowaway form fields.
+    @Body() dto: ImportTicketsDto,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<ImportResult> {
-    return this.csvSvc.import(projectId, file, actor.id);
+    return this.csv.import(dto.projectId, file, actor.id);
   }
 
   @Get()

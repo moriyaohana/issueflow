@@ -51,7 +51,6 @@ describe('AttachmentsService', () => {
           size: 4,
           buffer: Buffer.from([0, 1, 2, 3]),
         },
-        userId: 1,
         actorUserId: 1,
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -66,7 +65,6 @@ describe('AttachmentsService', () => {
         size: 4,
         buffer: Buffer.from([0, 1, 2, 3]),
       },
-      userId: 7,
       actorUserId: 7,
     });
     expect(result).toEqual(

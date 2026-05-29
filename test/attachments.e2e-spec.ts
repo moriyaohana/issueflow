@@ -42,10 +42,21 @@ describe('Attachments (e2e)', () => {
     const upload = await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticketId}/attachments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47]), {
-        filename: 'screenshot.png',
-        contentType: 'image/png',
-      })
+      // PNG signature + padding. `FileTypeValidator` now inspects magic
+      // numbers (it no longer trusts Content-Type), and the underlying
+      // `file-type` parser reads a chunk header past the 8-byte signature,
+      // so the buffer must be long enough for that lookahead to succeed.
+      .attach(
+        'file',
+        Buffer.concat([
+          Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+          Buffer.alloc(64, 0),
+        ]),
+        {
+          filename: 'screenshot.png',
+          contentType: 'image/png',
+        },
+      )
       .expect(HttpStatus.OK);
     expect(upload.body).toEqual({
       id: expect.any(Number),
@@ -105,10 +116,22 @@ describe('Attachments (e2e)', () => {
     const upload = await request(ctx.app.getHttpServer())
       .post(`/tickets/${ticket.body.id}/attachments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .attach('file', Buffer.from('hello'), {
-        filename: 'a.txt',
-        contentType: 'text/plain',
-      })
+      // The validator now inspects magic numbers, and `file-type` cannot
+      // detect plain text. Use a minimal PDF (which has a real `%PDF-`
+      // signature) with padding so the parser's lookahead doesn't fall off
+      // the end of the buffer — the goal of this case is to assert cascade
+      // behaviour, not to exercise text/plain specifically.
+      .attach(
+        'file',
+        Buffer.concat([
+          Buffer.from('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'),
+          Buffer.alloc(64, 0),
+        ]),
+        {
+          filename: 'a.pdf',
+          contentType: 'application/pdf',
+        },
+      )
       .expect(HttpStatus.OK);
     await request(ctx.app.getHttpServer())
       .delete(`/tickets/${ticket.body.id}`)

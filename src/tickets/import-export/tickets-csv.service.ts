@@ -114,7 +114,13 @@ export class TicketsCsvService {
     let created = 0;
     for (let i = 0; i < records.length; i++) {
       const dto = ticketFromRow(records[i], projectId);
-      const violations = await validate(dto, { whitelist: true });
+      // `forbidNonWhitelisted` makes CSVs with stowaway columns (e.g. a
+      // typo'd header or a malicious `role`) surface as row errors instead
+      // of being silently stripped. Same posture as the global ValidationPipe.
+      const violations = await validate(dto, {
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      });
       if (violations.length > 0) {
         errors.push({
           row: i + 1,

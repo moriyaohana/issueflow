@@ -32,8 +32,13 @@ export class AttachmentsService {
       size: number;
       buffer: Buffer;
     };
-    userId: number;
-    actorUserId: number | null;
+    // The uploader and the audit-log actor are necessarily the same person —
+    // an upload is always performed by the authenticated user. Keeping a
+    // single `actorUserId` (the term used elsewhere in the audit pipeline)
+    // removes the previous `userId` / `actorUserId` redundancy at the call
+    // site and stamps the same id on `Attachment.uploadedBy` and the audit
+    // row.
+    actorUserId: number;
   }): Promise<AttachmentMetadata> {
     await this.tickets.assertActive(args.ticketId);
     const saved = await this.attachments.save(
@@ -43,7 +48,7 @@ export class AttachmentsService {
         contentType: args.file.mimetype,
         sizeBytes: args.file.size,
         data: args.file.buffer,
-        uploadedBy: args.userId,
+        uploadedBy: args.actorUserId,
       }),
     );
     await this.audit.record({
