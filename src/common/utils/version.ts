@@ -1,4 +1,5 @@
 import { PreconditionFailedException } from '@nestjs/common';
+import { versionMismatch } from '../errors/messages';
 
 /**
  * Optimistic-concurrency guard. Throws a 412 with the row's actual version so
@@ -13,7 +14,7 @@ export function assertVersionMatches(
 ): void {
   if (entity.version !== expected) {
     throw new PreconditionFailedException({
-      message: `${entityName} version mismatch`,
+      message: versionMismatch(entityName),
       currentVersion: entity.version,
     });
   }

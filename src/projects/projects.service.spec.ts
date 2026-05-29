@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { ProjectsService } from './projects.service';
 import { Project } from './entities/project.entity';
 import { UsersService } from '../users/users.service';
@@ -10,6 +11,7 @@ describe('ProjectsService', () => {
   let service: ProjectsService;
   let repo: any;
   let users: any;
+  let dataSource: any;
 
   beforeEach(async () => {
     repo = {
@@ -23,12 +25,20 @@ describe('ProjectsService', () => {
     };
     users = {
       existsAndActive: jest.fn(),
-      findOneIncludingDeleted: jest.fn(),
+      findOptionalIncludingDeleted: jest.fn(),
+    };
+    // softDelete is wrapped in a TX; the mock runs the callback inline against
+    // an EntityManager that hands back our `repo` for Project.
+    dataSource = {
+      transaction: jest.fn().mockImplementation(async (cb: any) =>
+        cb({ getRepository: () => repo }),
+      ),
     };
     const moduleRef = await Test.createTestingModule({
       providers: [
         ProjectsService,
         { provide: getRepositoryToken(Project), useValue: repo },
+        { provide: getDataSourceToken(), useValue: dataSource as DataSource },
         { provide: UsersService, useValue: users },
         { provide: AuditLogService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
       ],
@@ -38,7 +48,7 @@ describe('ProjectsService', () => {
 
   it('400 when owner is soft-deleted', async () => {
     users.existsAndActive.mockResolvedValueOnce(false);
-    users.findOneIncludingDeleted.mockResolvedValueOnce({
+    users.findOptionalIncludingDeleted.mockResolvedValueOnce({
       id: 1,
       deletedAt: new Date(),
     });
@@ -49,7 +59,7 @@ describe('ProjectsService', () => {
 
   it('404 when owner does not exist', async () => {
     users.existsAndActive.mockResolvedValueOnce(false);
-    users.findOneIncludingDeleted.mockRejectedValueOnce(new NotFoundException());
+    users.findOptionalIncludingDeleted.mockResolvedValueOnce(null);
     await expect(
       service.create({ name: 'p', description: 'd', ownerId: 999 }),
     ).rejects.toBeInstanceOf(NotFoundException);

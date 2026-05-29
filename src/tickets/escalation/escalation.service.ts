@@ -8,9 +8,9 @@ import {
   TicketPriority,
 } from '../../common/enums/ticket-priority.enum';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { systemActor } from '../../audit-log/audit-log.helpers';
 import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
-import { ActorType } from '../../common/enums/actor-type.enum';
 
 interface PendingAuditRow {
   ticketId: number;
@@ -105,8 +105,7 @@ export class EscalationService {
           action: AuditAction.AUTO_ESCALATE,
           entityType: EntityType.TICKET,
           entityId: row.ticketId,
-          performedBy: null,
-          actor: ActorType.SYSTEM,
+          ...systemActor(),
           metadata: {
             priorityFrom: row.priorityFrom,
             priorityTo: row.priorityTo,

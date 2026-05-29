@@ -8,7 +8,11 @@ import {
 } from 'typeorm';
 
 @Entity({ name: 'ticket_dependencies' })
-@Index('UQ_ticket_dependency', ['ticketId', 'blockerId'], { unique: true })
+// Index keys are TS-level property names. The underlying DB column stays
+// `blockerId` (see `@Column({ name: 'blockerId' })` below and the migration);
+// only the entity-level identifier was renamed to match the README/PDF DTO
+// wording (`blockedBy`). No schema change.
+@Index('UQ_ticket_dependency', ['ticketId', 'blockedBy'], { unique: true })
 export class TicketDependency {
   @PrimaryGeneratedColumn()
   id: number;
@@ -16,8 +20,12 @@ export class TicketDependency {
   @Column({ type: 'int' })
   ticketId: number;
 
-  @Column({ type: 'int' })
-  blockerId: number;
+  // The README and DTO speak of the "blocked by" side of a dependency, but the
+  // original schema column was named `blockerId`. We rename only at the TS
+  // layer (via `name: 'blockerId'`) so the entity field matches the DTO field
+  // and the silent translation layer in the controller can go away.
+  @Column({ name: 'blockerId', type: 'int' })
+  blockedBy: number;
 
   @Column({ type: 'boolean', default: false })
   deletedByCascade: boolean;

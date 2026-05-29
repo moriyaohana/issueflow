@@ -16,6 +16,7 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
 import { AuditLog } from '../../audit-log/entities/audit-log.entity';
 import { liveOnly } from '../../common/utils/live-only';
+import { entityNotFound } from '../../common/errors/messages';
 
 @Injectable()
 export class DependenciesService {
@@ -35,10 +36,10 @@ export class DependenciesService {
    */
   async add(
     ticketId: number,
-    blockerId: number,
+    blockedBy: number,
     actorUserId: number | null = null,
   ): Promise<void> {
-    if (ticketId === blockerId) {
+    if (ticketId === blockedBy) {
       throw new BadRequestException('Ticket cannot depend on itself');
     }
     await this.dataSource.transaction(async (manager) => {
@@ -53,30 +54,37 @@ export class DependenciesService {
         .setLock('pessimistic_write')
         .where('t.id = :id AND t.deletedAt IS NULL', { id: ticketId })
         .getOne();
-      if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
+      if (!ticket) {
+        throw new NotFoundException(
+          entityNotFound(EntityType.TICKET, ticketId),
+        );
+      }
       const blocker = await ticketRepo.findOne({
-        where: { id: blockerId, deletedAt: IsNull() },
+        where: { id: blockedBy, deletedAt: IsNull() },
       });
-      if (!blocker)
-        throw new NotFoundException(`Blocker ticket ${blockerId} not found`);
+      if (!blocker) {
+        throw new NotFoundException(
+          entityNotFound(EntityType.TICKET, blockedBy),
+        );
+      }
       if (ticket.projectId !== blocker.projectId) {
         throw new BadRequestException(
           'Dependencies must be within the same project',
         );
       }
       const existing = await depsRepo.findOne({
-        where: liveOnly<TicketDependency>({ ticketId, blockerId }),
+        where: liveOnly<TicketDependency>({ ticketId, blockedBy }),
       });
       if (existing) {
         throw new ConflictException('Dependency already exists');
       }
-      await depsRepo.insert({ ticketId, blockerId });
+      await depsRepo.insert({ ticketId, blockedBy });
       await manager.getRepository(AuditLog).insert({
         action: AuditAction.CREATE,
         entityType: EntityType.TICKET,
         entityId: ticketId,
         ...actorOf(actorUserId),
-        metadata: { blockerId },
+        metadata: { blockedBy },
       });
     });
   }
@@ -93,7 +101,7 @@ export class DependenciesService {
     // pay to hydrate description/version/dueDate just to drop them. Keeps
     // the round-trip cheap on tickets with many blockers.
     const blockers = await this.tickets.find({
-      where: liveOnly<Ticket>({ id: In(rows.map((r) => r.blockerId)) }),
+      where: liveOnly<Ticket>({ id: In(rows.map((r) => r.blockedBy)) }),
       select: ['id', 'title', 'status'],
     });
     return blockers.map((b) => ({
@@ -105,15 +113,17 @@ export class DependenciesService {
 
   async remove(
     ticketId: number,
-    blockerId: number,
+    blockedBy: number,
     actorUserId: number | null = null,
   ): Promise<void> {
     const ticket = await this.tickets.findOne({
       where: liveOnly<Ticket>({ id: ticketId }),
     });
-    if (!ticket) throw new NotFoundException(`Ticket ${ticketId} not found`);
+    if (!ticket) {
+      throw new NotFoundException(entityNotFound(EntityType.TICKET, ticketId));
+    }
     const dep = await this.deps.findOne({
-      where: liveOnly<TicketDependency>({ ticketId, blockerId }),
+      where: liveOnly<TicketDependency>({ ticketId, blockedBy }),
     });
     if (!dep) throw new NotFoundException(`Dependency not found`);
     await this.deps.delete({ id: dep.id });
@@ -122,7 +132,7 @@ export class DependenciesService {
       entityType: EntityType.TICKET,
       entityId: ticketId,
       ...actorOf(actorUserId),
-      metadata: { blockerId },
+      metadata: { blockedBy },
     });
   }
 
@@ -137,7 +147,7 @@ export class DependenciesService {
     });
     if (deps.length === 0) return;
     const blockers = await this.tickets.find({
-      where: liveOnly<Ticket>({ id: In(deps.map((d) => d.blockerId)) }),
+      where: liveOnly<Ticket>({ id: In(deps.map((d) => d.blockedBy)) }),
     });
     const unresolved = blockers
       .filter((b) => b.status !== TicketStatus.DONE)
@@ -162,9 +172,9 @@ export class DependenciesService {
     if (ticketIds.length === 0) return;
     const rows = await this.deps
       .createQueryBuilder('d')
-      .select(['d.id', 'd.ticketId', 'd.blockerId'])
+      .select(['d.id', 'd.ticketId', 'd.blockedBy'])
       .where(
-        '(d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)) AND d.deletedAt IS NULL',
+        '(d.ticketId IN (:...ids) OR d.blockedBy IN (:...ids)) AND d.deletedAt IS NULL',
         { ids: ticketIds },
       )
       .getMany();
@@ -199,7 +209,7 @@ export class DependenciesService {
       .createQueryBuilder('d')
       .select(['d.id'])
       .where(
-        '(d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)) AND d.deletedByCascade = TRUE',
+        '(d.ticketId IN (:...ids) OR d.blockedBy IN (:...ids)) AND d.deletedByCascade = TRUE',
         { ids: ticketIds },
       )
       .withDeleted()

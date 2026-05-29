@@ -87,7 +87,8 @@ describe('TicketsCsvService', () => {
       const result = await service.import(1, file, 2);
       expect(result.created).toBe(1);
       expect(result.failed).toBe(1);
-      expect(result.errors[0].row).toBe(2);
+      // Header is line 1, good row is line 2, bad row is line 3 in the file.
+      expect(result.errors[0].row).toBe(3);
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: { event: 'import', created: 1, failed: 1 },

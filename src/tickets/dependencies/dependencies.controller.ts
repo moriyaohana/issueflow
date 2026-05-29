@@ -35,13 +35,17 @@ export class DependenciesController {
     await this.deps.add(ticketId, dto.blockedBy, actor.id);
   }
 
+  // URL segment stays `:blockerId` for backwards compatibility with clients
+  // that hit `DELETE /tickets/:id/dependencies/:blockerId` (the original
+  // README routing). The internal service parameter is named `blockedBy` to
+  // match the entity field rename.
   @Delete(':blockerId')
   @HttpCode(HttpStatus.OK)
   async remove(
     @Param('ticketId', ParseIntPipe) ticketId: number,
-    @Param('blockerId', ParseIntPipe) blockerId: number,
+    @Param('blockerId', ParseIntPipe) blockedBy: number,
     @CurrentUser() actor: CurrentUserPayload,
   ): Promise<void> {
-    await this.deps.remove(ticketId, blockerId, actor.id);
+    await this.deps.remove(ticketId, blockedBy, actor.id);
   }
 }

@@ -96,12 +96,22 @@ export class UsersService {
    * a user that's been removed from public listings.
    */
   async findOneIncludingDeleted(id: number): Promise<User> {
-    const user = await this.users.findOne({
+    const user = await this.findOptionalIncludingDeleted(id);
+    if (!user) throw new NotFoundException(`User ${id} not found`);
+    return user;
+  }
+
+  /**
+   * Null-returning variant of {@link findOneIncludingDeleted} for callers
+   * that need to branch on existence without paying for an exception. Used
+   * by `ProjectsService.create` to distinguish "owner missing" (404) from
+   * "owner soft-deleted" (400) without abusing try/catch for control flow.
+   */
+  async findOptionalIncludingDeleted(id: number): Promise<User | null> {
+    return this.users.findOne({
       where: { id },
       withDeleted: true,
     });
-    if (!user) throw new NotFoundException(`User ${id} not found`);
-    return user;
   }
 
   async update(

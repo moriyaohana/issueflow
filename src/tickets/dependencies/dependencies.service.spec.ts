@@ -110,7 +110,7 @@ describe('DependenciesService', () => {
   });
 
   it('DONE transition blocked when blocker is not DONE', async () => {
-    depsRepo.find.mockResolvedValueOnce([{ ticketId: 1, blockerId: 2 }]);
+    depsRepo.find.mockResolvedValueOnce([{ ticketId: 1, blockedBy: 2 }]);
     ticketsRepo.find.mockResolvedValueOnce([
       { id: 2, status: TicketStatus.IN_PROGRESS },
     ]);
@@ -120,7 +120,7 @@ describe('DependenciesService', () => {
   });
 
   it('DONE transition allowed when all blockers DONE', async () => {
-    depsRepo.find.mockResolvedValueOnce([{ ticketId: 1, blockerId: 2 }]);
+    depsRepo.find.mockResolvedValueOnce([{ ticketId: 1, blockedBy: 2 }]);
     ticketsRepo.find.mockResolvedValueOnce([
       { id: 2, status: TicketStatus.DONE },
     ]);
@@ -131,7 +131,7 @@ describe('DependenciesService', () => {
 
   describe('cascadeSoftDeleteDependencies', () => {
     function mockCascadeRows(
-      rows: { id: number; ticketId: number; blockerId: number }[],
+      rows: { id: number; ticketId: number; blockedBy: number }[],
     ) {
       const updateBuilder = {
         update: jest.fn().mockReturnThis(),
@@ -154,8 +154,8 @@ describe('DependenciesService', () => {
 
     it('emits one DELETE audit row per removed dependency', async () => {
       mockCascadeRows([
-        { id: 11, ticketId: 1, blockerId: 2 },
-        { id: 12, ticketId: 3, blockerId: 1 },
+        { id: 11, ticketId: 1, blockedBy: 2 },
+        { id: 12, ticketId: 3, blockedBy: 1 },
       ]);
       await service.cascadeSoftDeleteDependencies([1], 42);
       expect(audit.record).toHaveBeenCalledTimes(2);
@@ -179,8 +179,8 @@ describe('DependenciesService', () => {
 
     it('uses ActorType.SYSTEM when actorUserId is null', async () => {
       mockCascadeRows([
-        { id: 21, ticketId: 5, blockerId: 6 },
-        { id: 22, ticketId: 7, blockerId: 5 },
+        { id: 21, ticketId: 5, blockedBy: 6 },
+        { id: 22, ticketId: 7, blockedBy: 5 },
       ]);
       await service.cascadeSoftDeleteDependencies([5], null);
       expect(audit.record).toHaveBeenCalledTimes(2);
@@ -193,7 +193,7 @@ describe('DependenciesService', () => {
     });
 
     it('uses ActorType.USER when actorUserId is non-null', async () => {
-      mockCascadeRows([{ id: 31, ticketId: 9, blockerId: 10 }]);
+      mockCascadeRows([{ id: 31, ticketId: 9, blockedBy: 10 }]);
       await service.cascadeSoftDeleteDependencies([9], 7);
       expect(audit.record).toHaveBeenCalledTimes(1);
       expect(audit.record.mock.calls[0][0]).toMatchObject({

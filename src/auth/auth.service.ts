@@ -7,6 +7,7 @@ import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { InvalidatedTokensService } from './invalidated-tokens.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { systemActor } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { ActorType } from '../common/enums/actor-type.enum';
@@ -36,8 +37,7 @@ export class AuthService {
         action: AuditAction.LOGIN_FAILED,
         entityType: EntityType.USER,
         entityId: 0,
-        performedBy: null,
-        actor: ActorType.SYSTEM,
+        ...systemActor(),
         metadata: { attemptedUsername: dto.username, reason: 'unknown_user' },
       });
       throw new UnauthorizedException('Invalid credentials');
@@ -48,8 +48,7 @@ export class AuthService {
         action: AuditAction.LOGIN_FAILED,
         entityType: EntityType.USER,
         entityId: user.id,
-        performedBy: null,
-        actor: ActorType.SYSTEM,
+        ...systemActor(),
         metadata: { attemptedUsername: dto.username, reason: 'bad_password' },
       });
       throw new UnauthorizedException('Invalid credentials');

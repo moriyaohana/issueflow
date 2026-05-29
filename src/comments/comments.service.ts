@@ -21,6 +21,7 @@ import { EntityType } from '../common/enums/entity-type.enum';
 import { UserRole } from '../common/enums/user-role.enum';
 import { liveOnly } from '../common/utils/live-only';
 import { assertVersionMatches } from '../common/utils/version';
+import { entityNotFound } from '../common/errors/messages';
 
 /**
  * Minimal authenticated-caller shape used to authorise comment writes. We
@@ -77,25 +78,34 @@ export class CommentsService {
         `Author ${dto.authorId} is missing or deleted`,
       );
     }
-    const saved = await this.comments.save(
-      this.comments.create({
-        ticketId,
-        authorId: dto.authorId,
-        content: dto.content,
-      }),
-    );
+    // Comment + mentions land in one transaction so a crash between the two
+    // never leaves a comment with a stale or empty mention set. The audit row
+    // is part of the same TX (matches the `update` shape introduced below).
     const mentioned = await this.mentionParser.resolve(dto.content);
-    if (mentioned.length > 0) {
-      await this.mentions.insert(
-        mentioned.map((u) => ({ commentId: saved.id, userId: u.id })),
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const commentRepo = manager.getRepository(Comment);
+      const inserted = await commentRepo.save(
+        commentRepo.create({
+          ticketId,
+          authorId: dto.authorId,
+          content: dto.content,
+        }),
       );
-    }
-    await this.audit.record({
-      action: AuditAction.CREATE,
-      entityType: EntityType.COMMENT,
-      entityId: saved.id,
-      ...actorOf(actorUserId),
-      metadata: { ticketId, mentionedUserIds: mentioned.map((u) => u.id) },
+      if (mentioned.length > 0) {
+        await manager
+          .getRepository(Mention)
+          .insert(
+            mentioned.map((u) => ({ commentId: inserted.id, userId: u.id })),
+          );
+      }
+      await this.audit.record({
+        action: AuditAction.CREATE,
+        entityType: EntityType.COMMENT,
+        entityId: inserted.id,
+        ...actorOf(actorUserId),
+        metadata: { ticketId, mentionedUserIds: mentioned.map((u) => u.id) },
+      });
+      return inserted;
     });
     return this.toResponse(saved, mentioned);
   }
@@ -121,13 +131,18 @@ export class CommentsService {
       const comment = await manager
         .getRepository(Comment)
         .findOne({ where: { id: commentId } });
-      if (!comment)
-        throw new NotFoundException(`Comment ${commentId} not found`);
+      if (!comment) {
+        throw new NotFoundException(
+          entityNotFound(EntityType.COMMENT, commentId),
+        );
+      }
       // Route-vs-row consistency: don't leak "comment 5 exists, just under a
       // different ticket" — surface as 404 so a caller probing the wrong
       // ticket can't enumerate comment ids.
       if (comment.ticketId !== routeTicketId) {
-        throw new NotFoundException(`Comment ${commentId} not found`);
+        throw new NotFoundException(
+          entityNotFound(EntityType.COMMENT, commentId),
+        );
       }
       // Ownership: only the author or an ADMIN may mutate a comment. Internal
       // callers pass `actor = null` (e.g. cascade flows) and are trusted.
@@ -164,13 +179,15 @@ export class CommentsService {
           .getRepository(Mention)
           .insert(toAdd.map((userId) => ({ commentId, userId })));
       }
+      // Audit row is part of the same TX so the recorded UPDATE never lands
+      // for a save that ultimately rolled back (and vice versa).
+      await this.audit.record({
+        action: AuditAction.UPDATE,
+        entityType: EntityType.COMMENT,
+        entityId: commentId,
+        ...actorOf(actor?.id ?? null),
+      });
       return this.toResponse(comment, newMentions);
-    });
-    await this.audit.record({
-      action: AuditAction.UPDATE,
-      entityType: EntityType.COMMENT,
-      entityId: commentId,
-      ...actorOf(actor?.id ?? null),
     });
     return response;
   }
@@ -182,11 +199,17 @@ export class CommentsService {
     expectedVersion: number,
   ): Promise<void> {
     const comment = await this.comments.findOne({ where: { id: commentId } });
-    if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
+    if (!comment) {
+      throw new NotFoundException(
+        entityNotFound(EntityType.COMMENT, commentId),
+      );
+    }
     // Route-vs-row consistency: a comment that belongs to a different ticket
     // must look like a miss, not a 403/412 (which would leak existence).
     if (comment.ticketId !== routeTicketId) {
-      throw new NotFoundException(`Comment ${commentId} not found`);
+      throw new NotFoundException(
+        entityNotFound(EntityType.COMMENT, commentId),
+      );
     }
     if (
       actor &&

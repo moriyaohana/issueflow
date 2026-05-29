@@ -25,12 +25,16 @@ import {
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { actorOf } from '../audit-log/audit-log.helpers';
+import { actorOf, systemActor } from '../audit-log/audit-log.helpers';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
-import { ActorType } from '../common/enums/actor-type.enum';
 import { AuditLog } from '../audit-log/entities/audit-log.entity';
 import { assertVersionMatches } from '../common/utils/version';
+import {
+  entityNotFound,
+  TICKET_IS_DONE,
+  versionMismatch,
+} from '../common/errors/messages';
 
 export interface TicketCascadeTarget {
   cascadeSoftDeleteComments(
@@ -107,7 +111,9 @@ export class TicketsService {
   ): Promise<Ticket> {
     const projectActive = await this.projects.existsAndActive(dto.projectId);
     if (!projectActive) {
-      throw new NotFoundException(`Project ${dto.projectId} not found`);
+      throw new NotFoundException(
+        entityNotFound(EntityType.PROJECT, dto.projectId),
+      );
     }
     if (dto.assigneeId != null) {
       const ok = await this.users.existsAndActive(dto.assigneeId);
@@ -163,8 +169,7 @@ export class TicketsService {
           action: AuditAction.AUTO_ASSIGN,
           entityType: EntityType.TICKET,
           entityId: saved.id,
-          performedBy: null,
-          actor: ActorType.SYSTEM,
+          ...systemActor(),
           metadata: { assignedTo: assigneeId },
         });
       }
@@ -176,7 +181,9 @@ export class TicketsService {
   async findAllForProject(projectId: number): Promise<Ticket[]> {
     const active = await this.projects.existsAndActive(projectId);
     if (!active) {
-      throw new NotFoundException(`Project ${projectId} not found`);
+      throw new NotFoundException(
+        entityNotFound(EntityType.PROJECT, projectId),
+      );
     }
     return this.tickets.find({ where: { projectId, deletedAt: IsNull() } });
   }
@@ -187,7 +194,9 @@ export class TicketsService {
     // unknown projects.
     const exists = await this.projects.existsIncludingDeleted(projectId);
     if (!exists) {
-      throw new NotFoundException(`Project ${projectId} not found`);
+      throw new NotFoundException(
+        entityNotFound(EntityType.PROJECT, projectId),
+      );
     }
     return this.tickets.find({
       where: { projectId, deletedAt: Not(IsNull()) },
@@ -199,7 +208,9 @@ export class TicketsService {
     const ticket = await this.tickets.findOne({
       where: { id, deletedAt: IsNull() },
     });
-    if (!ticket) throw new NotFoundException(`Ticket ${id} not found`);
+    if (!ticket) {
+      throw new NotFoundException(entityNotFound(EntityType.TICKET, id));
+    }
     return ticket;
   }
 
@@ -233,7 +244,7 @@ export class TicketsService {
       withDeleted: true,
     });
     if (!ticket || ticket.deletedAt) {
-      throw new NotFoundException(`Ticket ${id} not found`);
+      throw new NotFoundException(entityNotFound(EntityType.TICKET, id));
     }
     this.assertEditable(ticket);
     assertVersionMatches(ticket, expectedVersion, 'Ticket');
@@ -262,7 +273,7 @@ export class TicketsService {
 
   private assertEditable(ticket: Ticket): void {
     if (ticket.status === TicketStatus.DONE) {
-      throw new ForbiddenException('Ticket is DONE and cannot be modified');
+      throw new ForbiddenException(TICKET_IS_DONE);
     }
   }
 
@@ -348,7 +359,7 @@ export class TicketsService {
           withDeleted: true,
         });
         throw new PreconditionFailedException({
-          message: 'Ticket version mismatch',
+          message: versionMismatch('Ticket'),
           currentVersion: fresh?.version ?? null,
         });
       }
@@ -377,7 +388,9 @@ export class TicketsService {
         .setLock('pessimistic_write')
         .where('t.id = :id AND t.deletedAt IS NULL', { id })
         .getOne();
-      if (!ticket) throw new NotFoundException(`Ticket ${id} not found`);
+      if (!ticket) {
+        throw new NotFoundException(entityNotFound(EntityType.TICKET, id));
+      }
       assertVersionMatches(ticket, expectedVersion, 'Ticket');
       ticket.deletedAt = new Date();
       try {
@@ -385,7 +398,7 @@ export class TicketsService {
       } catch (err) {
         if (err instanceof OptimisticLockVersionMismatchError) {
           throw new PreconditionFailedException({
-            message: 'Ticket version mismatch',
+            message: versionMismatch('Ticket'),
             currentVersion: ticket.version,
           });
         }
@@ -410,7 +423,9 @@ export class TicketsService {
       where: { id },
       withDeleted: true,
     });
-    if (!ticket) throw new NotFoundException(`Ticket ${id} not found`);
+    if (!ticket) {
+      throw new NotFoundException(entityNotFound(EntityType.TICKET, id));
+    }
     if (!ticket.deletedAt) return ticket;
     // Single conditional UPDATE: clear `deletedAt` and `deletedByCascade` in
     // one round-trip so a crash between the two no longer leaves a restored
@@ -575,7 +590,7 @@ export class TicketsService {
    */
   async assertActive(id: number): Promise<void> {
     if (!(await this.existsAndActive(id))) {
-      throw new NotFoundException(`Ticket ${id} not found`);
+      throw new NotFoundException(entityNotFound(EntityType.TICKET, id));
     }
   }
 }
