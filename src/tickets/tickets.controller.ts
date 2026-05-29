@@ -14,7 +14,6 @@ import {
   Query,
   Res,
   UploadedFile,
-  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -25,14 +24,12 @@ import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { Ticket } from './entities/ticket.entity';
 import { Roles } from '../common/decorators/roles.decorator';
-import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
 import {
   CurrentUser,
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
 import { IfMatch } from '../common/decorators/if-match.decorator';
-import { ETagInterceptor } from '../common/interceptors/etag.interceptor';
 import {
   TicketsCsvService,
   ImportResult,
@@ -41,7 +38,6 @@ import {
 const MAX_IMPORT_SIZE = 10 * 1024 * 1024;
 
 @Controller('tickets')
-@UseInterceptors(ETagInterceptor)
 export class TicketsController {
   constructor(
     private readonly tickets: TicketsService,
@@ -51,7 +47,6 @@ export class TicketsController {
   // Static segments are declared before `:ticketId` so they aren't shadowed
   // by Express's route trie (registration order matters here).
   @Get('deleted')
-  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   listDeleted(
     @Query('projectId', ParseIntPipe) projectId: number,
@@ -145,7 +140,6 @@ export class TicketsController {
 
   @Post(':ticketId/restore')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   restore(
     @Param('ticketId', ParseIntPipe) ticketId: number,

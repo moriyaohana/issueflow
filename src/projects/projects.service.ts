@@ -66,7 +66,7 @@ export class ProjectsService {
     });
     const saved = await this.projects.save(project);
     await this.audit.record({
-      action: AuditAction.PROJECT_CREATE,
+      action: AuditAction.CREATE,
       entityType: EntityType.PROJECT,
       entityId: saved.id,
       ...actorOf(actorUserId),
@@ -103,7 +103,7 @@ export class ProjectsService {
     if (dto.description !== undefined) project.description = dto.description;
     const saved = await this.projects.save(project);
     await this.audit.record({
-      action: AuditAction.PROJECT_UPDATE,
+      action: AuditAction.UPDATE,
       entityType: EntityType.PROJECT,
       entityId: saved.id,
       ...actorOf(actorUserId),
@@ -118,7 +118,7 @@ export class ProjectsService {
     const project = await this.findOne(id);
     await this.projects.softRemove(project);
     await this.audit.record({
-      action: AuditAction.PROJECT_DELETE,
+      action: AuditAction.DELETE,
       entityType: EntityType.PROJECT,
       entityId: project.id,
       ...actorOf(actorUserId),
@@ -145,7 +145,7 @@ export class ProjectsService {
     }
     await this.projects.restore(id);
     await this.audit.record({
-      action: AuditAction.PROJECT_RESTORE,
+      action: AuditAction.RESTORE,
       entityType: EntityType.PROJECT,
       entityId: project.id,
       ...actorOf(actorUserId),

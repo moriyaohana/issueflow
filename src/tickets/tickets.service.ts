@@ -121,7 +121,7 @@ export class TicketsService {
     });
     const saved = await this.tickets.save(ticket);
     await this.audit.record({
-      action: AuditAction.TICKET_CREATE,
+      action: AuditAction.CREATE,
       entityType: EntityType.TICKET,
       entityId: saved.id,
       ...actorOf(actorUserId),
@@ -259,7 +259,7 @@ export class TicketsService {
       metadata.priorityTo = saved.priority;
     }
     await this.audit.record({
-      action: AuditAction.TICKET_UPDATE,
+      action: AuditAction.UPDATE,
       entityType: EntityType.TICKET,
       entityId: saved.id,
       ...actorOf(actorUserId),
@@ -289,7 +289,7 @@ export class TicketsService {
     await this.tickets.save(ticket);
     await this.runCascadeSoftDeletes([ticket.id], actorUserId);
     await this.audit.record({
-      action: AuditAction.TICKET_DELETE,
+      action: AuditAction.DELETE,
       entityType: EntityType.TICKET,
       entityId: ticket.id,
       ...actorOf(actorUserId),
@@ -313,7 +313,7 @@ export class TicketsService {
     }
     await this.runCascadeRestores([ticket.id], actorUserId);
     await this.audit.record({
-      action: AuditAction.TICKET_RESTORE,
+      action: AuditAction.RESTORE,
       entityType: EntityType.TICKET,
       entityId: ticket.id,
       ...actorOf(actorUserId),
@@ -338,7 +338,7 @@ export class TicketsService {
     await this.runCascadeSoftDeletes(ids, actorUserId);
     for (const t of tickets) {
       await this.audit.record({
-        action: AuditAction.TICKET_DELETE,
+        action: AuditAction.DELETE,
         entityType: EntityType.TICKET,
         entityId: t.id,
         ...actorOf(actorUserId),
@@ -363,7 +363,7 @@ export class TicketsService {
     await this.runCascadeRestores(ids, actorUserId);
     for (const t of candidates) {
       await this.audit.record({
-        action: AuditAction.TICKET_RESTORE,
+        action: AuditAction.RESTORE,
         entityType: EntityType.TICKET,
         entityId: t.id,
         ...actorOf(actorUserId),

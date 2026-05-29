@@ -43,7 +43,7 @@ export class UsersService {
     try {
       const saved = await this.users.save(user);
       await this.audit.record({
-        action: AuditAction.USER_CREATE,
+        action: AuditAction.CREATE,
         entityType: EntityType.USER,
         entityId: saved.id,
         ...actorOf(actorUserId),
@@ -97,7 +97,7 @@ export class UsersService {
     if (dto.role !== undefined) user.role = dto.role;
     const saved = await this.users.save(user);
     await this.audit.record({
-      action: AuditAction.USER_UPDATE,
+      action: AuditAction.UPDATE,
       entityType: EntityType.USER,
       entityId: saved.id,
       ...actorOf(actorUserId),
@@ -115,30 +115,11 @@ export class UsersService {
     if (!user) throw new NotFoundException(`User ${id} not found`);
     await this.users.softRemove(user);
     await this.audit.record({
-      action: AuditAction.USER_DELETE,
+      action: AuditAction.DELETE,
       entityType: EntityType.USER,
       entityId: user.id,
       ...actorOf(actorUserId),
     });
-  }
-
-  async restore(
-    id: number,
-    actorUserId: number | null = null,
-  ): Promise<UserResponseDto> {
-    const user = await this.findOneIncludingDeleted(id);
-    if (!user.deletedAt) {
-      return UserResponseDto.fromEntity(user);
-    }
-    await this.users.restore(id);
-    const reloaded = await this.users.findOne({ where: { id } });
-    await this.audit.record({
-      action: AuditAction.USER_RESTORE,
-      entityType: EntityType.USER,
-      entityId: id,
-      ...actorOf(actorUserId),
-    });
-    return UserResponseDto.fromEntity(reloaded);
   }
 
   /**

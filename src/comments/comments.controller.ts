@@ -9,7 +9,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  UseInterceptors,
 } from '@nestjs/common';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -19,10 +18,8 @@ import {
   CurrentUserPayload,
 } from '../common/decorators/current-user.decorator';
 import { IfMatch } from '../common/decorators/if-match.decorator';
-import { ETagInterceptor } from '../common/interceptors/etag.interceptor';
 
 @Controller('tickets/:ticketId/comments')
-@UseInterceptors(ETagInterceptor)
 export class CommentsController {
   constructor(private readonly comments: CommentsService) {}
 

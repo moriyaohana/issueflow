@@ -49,7 +49,7 @@ export class AttachmentsService {
       }),
     );
     await this.audit.record({
-      action: AuditAction.ATTACHMENT_UPLOAD,
+      action: AuditAction.CREATE,
       entityType: EntityType.ATTACHMENT,
       entityId: saved.id,
       ...actorOf(args.actorUserId),
@@ -80,7 +80,7 @@ export class AttachmentsService {
     }
     await this.attachments.delete({ id: attachmentId });
     await this.audit.record({
-      action: AuditAction.ATTACHMENT_DELETE,
+      action: AuditAction.DELETE,
       entityType: EntityType.ATTACHMENT,
       entityId: attachmentId,
       ...actorOf(actorUserId),
@@ -113,7 +113,7 @@ export class AttachmentsService {
       .execute();
     for (const r of rows) {
       await this.audit.record({
-        action: AuditAction.ATTACHMENT_DELETE,
+        action: AuditAction.DELETE,
         entityType: EntityType.ATTACHMENT,
         entityId: r.id,
         ...actorOf(actorUserId),
@@ -146,7 +146,7 @@ export class AttachmentsService {
       .execute();
     for (const r of rows) {
       await this.audit.record({
-        action: AuditAction.ATTACHMENT_RESTORE,
+        action: AuditAction.RESTORE,
         entityType: EntityType.ATTACHMENT,
         entityId: r.id,
         ...actorOf(actorUserId),

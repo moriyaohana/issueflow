@@ -117,7 +117,7 @@ describe('Attachments (e2e)', () => {
       .expect(HttpStatus.OK);
     const audit = await request(ctx.app.getHttpServer())
       .get(
-        `/audit-logs?entityType=ATTACHMENT&entityId=${upload.body.id}&action=ATTACHMENT_DELETE`,
+        `/audit-logs?entityType=ATTACHMENT&entityId=${upload.body.id}&action=DELETE`,
       )
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(HttpStatus.OK);

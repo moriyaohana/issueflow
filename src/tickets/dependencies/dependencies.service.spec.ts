@@ -111,7 +111,7 @@ describe('DependenciesService', () => {
       return updateBuilder;
     }
 
-    it('emits one DEPENDENCY_DELETE audit row per removed dependency', async () => {
+    it('emits one DELETE audit row per removed dependency', async () => {
       mockCascadeRows([
         { id: 11, ticketId: 1, blockerId: 2 },
         { id: 12, ticketId: 3, blockerId: 1 },
@@ -119,7 +119,7 @@ describe('DependenciesService', () => {
       await service.cascadeSoftDeleteDependencies([1], 42);
       expect(audit.record).toHaveBeenCalledTimes(2);
       expect(audit.record).toHaveBeenNthCalledWith(1, {
-        action: AuditAction.DEPENDENCY_DELETE,
+        action: AuditAction.DELETE,
         entityType: EntityType.DEPENDENCY,
         entityId: 11,
         performedBy: 42,
@@ -127,7 +127,7 @@ describe('DependenciesService', () => {
         metadata: { cascade: 'soft', ticketIds: [1] },
       });
       expect(audit.record).toHaveBeenNthCalledWith(2, {
-        action: AuditAction.DEPENDENCY_DELETE,
+        action: AuditAction.DELETE,
         entityType: EntityType.DEPENDENCY,
         entityId: 12,
         performedBy: 42,

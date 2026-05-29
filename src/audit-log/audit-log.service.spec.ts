@@ -26,7 +26,7 @@ describe('AuditLogService', () => {
 
   it('writes a row matching the input', async () => {
     await service.record({
-      action: AuditAction.PROJECT_CREATE,
+      action: AuditAction.CREATE,
       entityType: EntityType.PROJECT,
       entityId: 1,
       performedBy: 2,
@@ -34,7 +34,7 @@ describe('AuditLogService', () => {
       metadata: { foo: 'bar' },
     });
     expect(repo.insert).toHaveBeenCalledWith({
-      action: AuditAction.PROJECT_CREATE,
+      action: AuditAction.CREATE,
       entityType: EntityType.PROJECT,
       entityId: 1,
       performedBy: 2,
@@ -47,7 +47,7 @@ describe('AuditLogService', () => {
     repo.insert.mockRejectedValueOnce(new Error('db down'));
     await expect(
       service.record({
-        action: AuditAction.PROJECT_CREATE,
+        action: AuditAction.CREATE,
         entityType: EntityType.PROJECT,
         entityId: 1,
         performedBy: 2,
@@ -57,7 +57,10 @@ describe('AuditLogService', () => {
   });
 
   it('find composes filters into the where clause', async () => {
-    await service.find({ entityType: EntityType.TICKET, actor: ActorType.SYSTEM });
+    await service.find({
+      entityType: EntityType.TICKET,
+      actor: ActorType.SYSTEM,
+    });
     expect(repo.find).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { entityType: EntityType.TICKET, actor: ActorType.SYSTEM },

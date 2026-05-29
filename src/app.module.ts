@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { buildTypeOrmOptions } from './config/typeorm.config';
 import { HealthController } from './health.controller';
 import { UsersModule } from './users/users.module';
@@ -14,6 +15,9 @@ import { DependenciesModule } from './tickets/dependencies/dependencies.module';
 import { AttachmentsModule } from './tickets/attachments/attachments.module';
 import { EscalationModule } from './tickets/escalation/escalation.module';
 import { AutoAssignModule } from './tickets/auto-assign/auto-assign.module';
+import { RolesGuard } from './common/guards/roles.guard';
+import { ETagInterceptor } from './common/interceptors/etag.interceptor';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -36,5 +40,17 @@ import { AutoAssignModule } from './tickets/auto-assign/auto-assign.module';
     AutoAssignModule,
   ],
   controllers: [HealthController],
+  providers: [
+    // Global guards run in registration order. JwtAuthGuard MUST come first so
+    // it populates `request.user`; RolesGuard then reads `user.role` to enforce
+    // `@Roles(...)` annotations. Handlers without `@Roles` short-circuit to
+    // allow inside RolesGuard.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    // Strip the internal `version` field from responses and emit it as a weak
+    // ETag header instead, so optimistic concurrency is carried purely over
+    // HTTP headers.
+    { provide: APP_INTERCEPTOR, useClass: ETagInterceptor },
+  ],
 })
 export class AppModule {}

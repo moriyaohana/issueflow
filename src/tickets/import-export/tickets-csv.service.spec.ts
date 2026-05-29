@@ -60,7 +60,9 @@ describe('TicketsCsvService', () => {
       expect(csv.split('\n')[0]).toContain('"id"');
       expect(csv.split('\n')[0]).toContain('"assigneeId"');
       expect(audit.record).toHaveBeenCalledWith(
-        expect.objectContaining({ metadata: { ticketCount: 1 } }),
+        expect.objectContaining({
+          metadata: { event: 'export', ticketCount: 1 },
+        }),
       );
     });
   });
@@ -87,7 +89,9 @@ describe('TicketsCsvService', () => {
       expect(result.failed).toBe(1);
       expect(result.errors[0].row).toBe(2);
       expect(audit.record).toHaveBeenCalledWith(
-        expect.objectContaining({ metadata: { created: 1, failed: 1 } }),
+        expect.objectContaining({
+          metadata: { event: 'import', created: 1, failed: 1 },
+        }),
       );
     });
   });

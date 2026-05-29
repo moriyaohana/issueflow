@@ -136,7 +136,7 @@ describe('Ticket Dependencies (e2e)', () => {
       .expect(HttpStatus.OK);
   });
 
-  it('soft-deleting a ticket writes a DEPENDENCY_DELETE audit row per cascaded dependency', async () => {
+  it('soft-deleting a ticket writes a DELETE audit row per cascaded dependency', async () => {
     const a = await makeTicket();
     const b = await makeTicket();
     await request(ctx.app.getHttpServer())
@@ -152,7 +152,7 @@ describe('Ticket Dependencies (e2e)', () => {
       .expect(HttpStatus.OK);
 
     const audit = await request(ctx.app.getHttpServer())
-      .get('/audit-logs?entityType=DEPENDENCY&action=DEPENDENCY_DELETE')
+      .get('/audit-logs?entityType=DEPENDENCY&action=DELETE')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(HttpStatus.OK);
     const cascadeRow = audit.body.find(

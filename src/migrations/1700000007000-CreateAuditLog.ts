@@ -6,21 +6,17 @@ export class CreateAuditLog1700000007000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TYPE "audit_logs_action_enum" AS ENUM(
-        'USER_CREATE','USER_UPDATE','USER_DELETE','USER_RESTORE',
-        'LOGIN','LOGOUT',
-        'PROJECT_CREATE','PROJECT_UPDATE','PROJECT_DELETE','PROJECT_RESTORE',
-        'TICKET_CREATE','TICKET_UPDATE','TICKET_DELETE','TICKET_RESTORE',
-        'TICKET_IMPORT','TICKET_EXPORT',
-        'COMMENT_CREATE','COMMENT_UPDATE','COMMENT_DELETE',
-        'DEPENDENCY_ADD','DEPENDENCY_REMOVE',
-        'ATTACHMENT_UPLOAD','ATTACHMENT_DELETE',
-        'AUTO_ASSIGN','AUTO_ESCALATE'
+        'CREATE','UPDATE','DELETE','RESTORE',
+        'AUTO_ASSIGN','AUTO_ESCALATE',
+        'LOGIN'
       )
     `);
     await queryRunner.query(
       `CREATE TYPE "audit_logs_entityType_enum" AS ENUM('USER','PROJECT','TICKET','COMMENT','ATTACHMENT','DEPENDENCY')`,
     );
-    await queryRunner.query(`CREATE TYPE "audit_logs_actor_enum" AS ENUM('USER','SYSTEM')`);
+    await queryRunner.query(
+      `CREATE TYPE "audit_logs_actor_enum" AS ENUM('USER','SYSTEM')`,
+    );
     await queryRunner.query(`
       CREATE TABLE "audit_logs" (
         "id" SERIAL NOT NULL,

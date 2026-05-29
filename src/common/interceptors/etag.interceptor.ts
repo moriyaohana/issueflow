@@ -8,12 +8,22 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 /**
- * Translates the internal `version` field on a response body into a weak
- * ETag header (`W/"<n>"`) and strips it from the JSON payload, so that
- * optimistic concurrency is conveyed exclusively via HTTP headers.
+ * Strips the internal `version` field from response bodies so optimistic
+ * concurrency is conveyed exclusively via HTTP headers, and emits a weak
+ * `ETag` header (`W/"<n>"`) for single-object responses.
  *
- * Only acts on plain object responses — arrays and other shapes pass through
- * unchanged. Used by controllers that expose versioned entities.
+ * Behaviour summary:
+ *   - Single object with numeric `version`: ETag header is set, `version` is
+ *     stripped from the JSON payload.
+ *   - Single object without `version`, or with a non-numeric `version`: the
+ *     header is NOT emitted; `version` is still stripped if the key is
+ *     present (e.g. `null`) so we never leak it.
+ *   - Arrays: each element has its `version` key stripped (header is not
+ *     emitted — collection endpoints don't have a single "version").
+ *   - Other shapes (primitives, null, undefined): passed through unchanged.
+ *
+ * Registered globally in AppModule so every controller benefits without
+ * opt-in.
  */
 @Injectable()
 export class ETagInterceptor implements NestInterceptor {
@@ -21,20 +31,36 @@ export class ETagInterceptor implements NestInterceptor {
     const res = context.switchToHttp().getResponse();
     return next.handle().pipe(
       map((body) => {
-        if (
-          body &&
-          typeof body === 'object' &&
-          !Array.isArray(body) &&
-          typeof (body as { version?: unknown }).version === 'number'
-        ) {
-          const { version, ...rest } = body as Record<string, unknown> & {
-            version: number;
-          };
-          res.setHeader('ETag', `W/"${version}"`);
-          return rest;
+        if (Array.isArray(body)) {
+          return body.map((item) => this.stripVersion(item));
+        }
+        if (this.isPlainObject(body)) {
+          const version = (body as { version?: unknown }).version;
+          if (typeof version === 'number') {
+            res.setHeader('ETag', `W/"${version}"`);
+          }
+          return this.stripVersion(body);
         }
         return body;
       }),
     );
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  /**
+   * Removes the `version` key if it is present, regardless of its value. We
+   * key off presence (not type) because a response shape can legitimately
+   * carry `version: null` (e.g. a draft row) and we still don't want to leak
+   * the internal column.
+   */
+  private stripVersion(value: unknown): unknown {
+    if (!this.isPlainObject(value)) return value;
+    if (!('version' in value)) return value;
+    const { version: _drop, ...rest } = value;
+    void _drop;
+    return rest;
   }
 }

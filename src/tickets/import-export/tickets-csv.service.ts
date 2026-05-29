@@ -82,12 +82,16 @@ export class TicketsCsvService {
       columns: [...COLUMNS],
       quoted: true,
     });
+    // Export is logged as a CREATE on the project (a new CSV artifact). The
+    // README vocabulary doesn't include a dedicated EXPORT verb; the
+    // `event: 'export'` metadata tag preserves the original semantics for
+    // forensics.
     await this.audit.record({
-      action: AuditAction.TICKET_EXPORT,
+      action: AuditAction.CREATE,
       entityType: EntityType.PROJECT,
       entityId: projectId,
       ...actorOf(actorUserId),
-      metadata: { ticketCount: rows.length },
+      metadata: { event: 'export', ticketCount: rows.length },
     });
     return csv;
   }
@@ -127,12 +131,15 @@ export class TicketsCsvService {
         errors.push({ row: i + 1, error: err?.message ?? 'Unknown error' });
       }
     }
+    // Import is logged as CREATE on the project; the per-ticket CREATE rows
+    // are emitted by TicketsService.create. The `event: 'import'` metadata tag
+    // distinguishes this summary row from a plain project creation.
     await this.audit.record({
-      action: AuditAction.TICKET_IMPORT,
+      action: AuditAction.CREATE,
       entityType: EntityType.PROJECT,
       entityId: projectId,
       ...actorOf(actorUserId),
-      metadata: { created, failed: errors.length },
+      metadata: { event: 'import', created, failed: errors.length },
     });
     return { created, failed: errors.length, errors };
   }

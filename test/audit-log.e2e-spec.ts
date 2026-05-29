@@ -19,7 +19,7 @@ describe('Audit log (e2e)', () => {
     await ctx.close();
   });
 
-  it('records PROJECT_CREATE and TICKET_UPDATE with metadata.statusFrom/statusTo', async () => {
+  it('records CREATE on PROJECT and UPDATE on TICKET with metadata.statusFrom/statusTo', async () => {
     const project = await request(ctx.app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -31,7 +31,7 @@ describe('Audit log (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(HttpStatus.OK);
     expect(
-      projectAudit.body.find((r: any) => r.action === 'PROJECT_CREATE'),
+      projectAudit.body.find((r: any) => r.action === 'CREATE'),
     ).toBeTruthy();
 
     const ticket = await request(ctx.app.getHttpServer())
@@ -58,15 +58,13 @@ describe('Audit log (e2e)', () => {
       .get(`/audit-logs?entityType=TICKET&entityId=${ticket.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(HttpStatus.OK);
-    const update = ticketAudit.body.find(
-      (r: any) => r.action === 'TICKET_UPDATE',
-    );
+    const update = ticketAudit.body.find((r: any) => r.action === 'UPDATE');
     expect(update).toBeTruthy();
     expect(update.metadata.statusFrom).toBe('TODO');
     expect(update.metadata.statusTo).toBe('IN_PROGRESS');
   });
 
-  it('cascading project delete writes TICKET_DELETE and COMMENT_DELETE rows with metadata.cascade', async () => {
+  it('cascading project delete writes DELETE rows on TICKET and COMMENT with metadata.cascade', async () => {
     const project = await request(ctx.app.getHttpServer())
       .post('/projects')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -100,8 +98,7 @@ describe('Audit log (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(HttpStatus.OK);
     const cascadeRow = ticketAudit.body.find(
-      (r: any) =>
-        r.action === 'TICKET_DELETE' && r.metadata?.cascade === 'soft',
+      (r: any) => r.action === 'DELETE' && r.metadata?.cascade === 'soft',
     );
     expect(cascadeRow).toBeTruthy();
     expect(cascadeRow.metadata.projectId).toBe(project.body.id);
@@ -112,8 +109,7 @@ describe('Audit log (e2e)', () => {
       .expect(HttpStatus.OK);
     expect(
       commentAudit.body.find(
-        (r: any) =>
-          r.action === 'COMMENT_DELETE' && r.metadata?.cascade === 'soft',
+        (r: any) => r.action === 'DELETE' && r.metadata?.cascade === 'soft',
       ),
     ).toBeTruthy();
   });

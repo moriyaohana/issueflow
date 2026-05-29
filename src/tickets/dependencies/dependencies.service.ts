@@ -51,7 +51,7 @@ export class DependenciesService {
     }
     await this.deps.insert({ ticketId, blockerId });
     await this.audit.record({
-      action: AuditAction.DEPENDENCY_ADD,
+      action: AuditAction.CREATE,
       entityType: EntityType.TICKET,
       entityId: ticketId,
       ...actorOf(actorUserId),
@@ -93,7 +93,7 @@ export class DependenciesService {
     if (!dep) throw new NotFoundException(`Dependency not found`);
     await this.deps.delete({ id: dep.id });
     await this.audit.record({
-      action: AuditAction.DEPENDENCY_REMOVE,
+      action: AuditAction.DELETE,
       entityType: EntityType.TICKET,
       entityId: ticketId,
       ...actorOf(actorUserId),
@@ -152,7 +152,7 @@ export class DependenciesService {
       .execute();
     for (const r of rows) {
       await this.audit.record({
-        action: AuditAction.DEPENDENCY_DELETE,
+        action: AuditAction.DELETE,
         entityType: EntityType.DEPENDENCY,
         entityId: r.id,
         ...actorOf(actorUserId),
@@ -188,7 +188,7 @@ export class DependenciesService {
       .execute();
     for (const r of rows) {
       await this.audit.record({
-        action: AuditAction.DEPENDENCY_RESTORE,
+        action: AuditAction.RESTORE,
         entityType: EntityType.DEPENDENCY,
         entityId: r.id,
         ...actorOf(actorUserId),

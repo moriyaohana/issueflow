@@ -76,7 +76,7 @@ export class CommentsService {
       );
     }
     await this.audit.record({
-      action: AuditAction.COMMENT_CREATE,
+      action: AuditAction.CREATE,
       entityType: EntityType.COMMENT,
       entityId: saved.id,
       ...actorOf(actorUserId),
@@ -141,7 +141,7 @@ export class CommentsService {
       return this.toResponse(comment, newMentions);
     });
     await this.audit.record({
-      action: AuditAction.COMMENT_UPDATE,
+      action: AuditAction.UPDATE,
       entityType: EntityType.COMMENT,
       entityId: commentId,
       ...actorOf(actorUserId),
@@ -164,7 +164,7 @@ export class CommentsService {
     }
     await this.comments.delete({ id: commentId });
     await this.audit.record({
-      action: AuditAction.COMMENT_DELETE,
+      action: AuditAction.DELETE,
       entityType: EntityType.COMMENT,
       entityId: commentId,
       ...actorOf(actorUserId),
@@ -258,7 +258,7 @@ export class CommentsService {
       .execute();
     for (const r of rows) {
       await this.audit.record({
-        action: AuditAction.COMMENT_DELETE,
+        action: AuditAction.DELETE,
         entityType: EntityType.COMMENT,
         entityId: r.id,
         ...actorOf(actorUserId),
@@ -291,7 +291,7 @@ export class CommentsService {
       .execute();
     for (const r of rows) {
       await this.audit.record({
-        action: AuditAction.COMMENT_RESTORE,
+        action: AuditAction.RESTORE,
         entityType: EntityType.COMMENT,
         entityId: r.id,
         ...actorOf(actorUserId),

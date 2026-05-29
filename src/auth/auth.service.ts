@@ -66,12 +66,16 @@ export class AuthService {
   ): Promise<void> {
     const expiresAt = new Date(expirySeconds * 1000);
     await this.invalidated.add(jti, expiresAt);
+    // Logout = invalidating the session token; modelled as DELETE on the user
+    // session (entityType=USER, entityId=user id). The README vocabulary
+    // doesn't include a dedicated LOGOUT verb.
     await this.audit.record({
-      action: AuditAction.LOGOUT,
+      action: AuditAction.DELETE,
       entityType: EntityType.USER,
       entityId: userId,
       performedBy: userId,
       actor: ActorType.USER,
+      metadata: { event: 'logout' },
     });
   }
 }

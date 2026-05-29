@@ -9,14 +9,12 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { Project } from './entities/project.entity';
 import { Roles } from '../common/decorators/roles.decorator';
-import { RolesGuard } from '../common/guards/roles.guard';
 import { UserRole } from '../common/enums/user-role.enum';
 import {
   CurrentUser,
@@ -28,7 +26,6 @@ export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get('deleted')
-  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   listDeleted(): Promise<Project[]> {
     return this.projects.findAllDeleted();
@@ -74,7 +71,6 @@ export class ProjectsController {
 
   @Post(':projectId/restore')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   restore(
     @Param('projectId', ParseIntPipe) projectId: number,
