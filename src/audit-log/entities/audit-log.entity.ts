@@ -23,6 +23,7 @@ export class AuditLog {
   @Column({ type: 'enum', enum: ActorType })
   actor: ActorType;
 
+  // jsonb: queryable, transactional, indexable via GIN when load warrants.
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null;
 
