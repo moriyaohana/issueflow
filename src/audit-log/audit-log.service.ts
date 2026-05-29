@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity';
 import { AuditAction } from '../common/enums/audit-action.enum';
 import { EntityType } from '../common/enums/entity-type.enum';
 import { ActorType } from '../common/enums/actor-type.enum';
+import { AuditLogQueryDto } from './dto/audit-log-query.dto';
 
 export interface AuditRecordInput {
   action: AuditAction;
@@ -44,13 +45,8 @@ export class AuditLogService {
     }
   }
 
-  async find(filters: {
-    entityType?: EntityType;
-    entityId?: number;
-    action?: AuditAction;
-    actor?: ActorType;
-  }): Promise<AuditLog[]> {
-    const where: Record<string, unknown> = {};
+  async find(filters: AuditLogQueryDto): Promise<AuditLog[]> {
+    const where: FindOptionsWhere<AuditLog> = {};
     if (filters.entityType) where.entityType = filters.entityType;
     if (filters.entityId !== undefined) where.entityId = filters.entityId;
     if (filters.action) where.action = filters.action;
