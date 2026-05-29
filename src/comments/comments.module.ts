@@ -31,10 +31,10 @@ export class CommentsModule implements OnModuleInit {
   // and restore comments alongside a ticket (or its parent project).
   onModuleInit(): void {
     this.tickets.registerCascadeTarget({
-      cascadeSoftDeleteComments: (ids, parentDeletedAt, actor) =>
-        this.comments.cascadeSoftDeleteComments(ids, parentDeletedAt, actor),
-      cascadeRestoreComments: (ids, parentDeletedAt, actor) =>
-        this.comments.cascadeRestoreComments(ids, parentDeletedAt, actor),
+      cascadeSoftDeleteComments: (ids, actor) =>
+        this.comments.cascadeSoftDeleteComments(ids, actor),
+      cascadeRestoreComments: (ids, actor) =>
+        this.comments.cascadeRestoreComments(ids, actor),
     });
   }
 }

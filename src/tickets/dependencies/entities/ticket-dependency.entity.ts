@@ -19,6 +19,9 @@ export class TicketDependency {
   @Column({ type: 'int' })
   blockerId: number;
 
+  @Column({ type: 'boolean', default: false })
+  deletedByCascade: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

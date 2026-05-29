@@ -90,13 +90,12 @@ export class AttachmentsService {
 
   /**
    * Cascade hook fired by ticket soft-delete.
-   * Soft-deletes live attachments owned by the given tickets so they can be
-   * restored alongside the ticket. The child's `deletedAt` is stamped to the
-   * parent ticket's `deletedAt` so the restore path can match them exactly.
+   * Soft-deletes live attachments owned by the given tickets and stamps
+   * `deletedByCascade` so the restore path knows which rows belong to this
+   * cascade event.
    */
   async cascadeSoftDeleteAttachments(
     ticketIds: number[],
-    parentDeletedAt: Date,
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
@@ -108,7 +107,7 @@ export class AttachmentsService {
     await this.attachments
       .createQueryBuilder()
       .update(Attachment)
-      .set({ deletedAt: parentDeletedAt })
+      .set({ deletedAt: new Date(), deletedByCascade: true })
       .where('ticketId IN (:...ticketIds)', { ticketIds })
       .andWhere('deletedAt IS NULL')
       .execute();
@@ -124,19 +123,16 @@ export class AttachmentsService {
   }
 
   /**
-   * Restore previously cascade-soft-deleted attachments. Only rows whose
-   * `deletedAt` matches the parent ticket's `deletedAt` at delete time come
-   * back — independently-deleted attachments with a different timestamp are
-   * left alone.
+   * Restore previously cascade-soft-deleted attachments. Only rows flagged
+   * with `deletedByCascade` come back; the flag is cleared on restore.
    */
   async cascadeRestoreAttachments(
     ticketIds: number[],
-    parentDeletedAt: Date,
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
     const rows = await this.attachments.find({
-      where: { ticketId: In(ticketIds), deletedAt: parentDeletedAt },
+      where: { ticketId: In(ticketIds), deletedByCascade: true },
       select: ['id', 'ticketId'],
       withDeleted: true,
     });
@@ -144,9 +140,9 @@ export class AttachmentsService {
     await this.attachments
       .createQueryBuilder()
       .update(Attachment)
-      .set({ deletedAt: null })
+      .set({ deletedAt: null, deletedByCascade: false })
       .where('ticketId IN (:...ticketIds)', { ticketIds })
-      .andWhere('deletedAt = :parentDeletedAt', { parentDeletedAt })
+      .andWhere('deletedByCascade = TRUE')
       .execute();
     for (const r of rows) {
       await this.audit.record({

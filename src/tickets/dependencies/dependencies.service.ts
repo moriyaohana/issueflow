@@ -127,13 +127,11 @@ export class DependenciesService {
 
   /**
    * Cascade hook fired by ticket soft-delete. Soft-deletes every live
-   * dependency that references the given tickets on either side so a later
-   * ticket restore can resurrect them as a set. Children's `deletedAt` is
-   * stamped to the parent ticket's `deletedAt` so restore can match them.
+   * dependency that references the given tickets on either side and stamps
+   * `deletedByCascade` so a later ticket restore can resurrect them as a set.
    */
   async cascadeSoftDeleteDependencies(
     ticketIds: number[],
-    parentDeletedAt: Date,
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
@@ -149,7 +147,7 @@ export class DependenciesService {
     await this.deps
       .createQueryBuilder()
       .update(TicketDependency)
-      .set({ deletedAt: parentDeletedAt })
+      .set({ deletedAt: new Date(), deletedByCascade: true })
       .where('id IN (:...ids)', { ids: rows.map((r) => r.id) })
       .execute();
     for (const r of rows) {
@@ -164,13 +162,11 @@ export class DependenciesService {
   }
 
   /**
-   * Restore previously cascade-soft-deleted dependencies. Only rows whose
-   * `deletedAt` matches the parent ticket's `deletedAt` are resurrected, so
-   * an independently-removed dependency stays gone.
+   * Restore previously cascade-soft-deleted dependencies. Only rows flagged
+   * with `deletedByCascade` are resurrected; the flag is cleared on restore.
    */
   async cascadeRestoreDependencies(
     ticketIds: number[],
-    parentDeletedAt: Date,
     actorUserId: number | null = null,
   ): Promise<void> {
     if (ticketIds.length === 0) return;
@@ -178,8 +174,8 @@ export class DependenciesService {
       .createQueryBuilder('d')
       .select(['d.id'])
       .where(
-        '(d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)) AND d.deletedAt = :parentDeletedAt',
-        { ids: ticketIds, parentDeletedAt },
+        '(d.ticketId IN (:...ids) OR d.blockerId IN (:...ids)) AND d.deletedByCascade = TRUE',
+        { ids: ticketIds },
       )
       .withDeleted()
       .getMany();
@@ -187,7 +183,7 @@ export class DependenciesService {
     await this.deps
       .createQueryBuilder()
       .update(TicketDependency)
-      .set({ deletedAt: null })
+      .set({ deletedAt: null, deletedByCascade: false })
       .where('id IN (:...ids)', { ids: rows.map((r) => r.id) })
       .execute();
     for (const r of rows) {

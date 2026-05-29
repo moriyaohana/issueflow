@@ -26,6 +26,9 @@ export class Comment {
   @Column({ type: 'int', default: 1 })
   version: number;
 
+  @Column({ type: 'boolean', default: false })
+  deletedByCascade: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

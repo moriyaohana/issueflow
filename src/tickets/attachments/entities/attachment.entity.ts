@@ -31,6 +31,9 @@ export class Attachment {
   @Column({ type: 'int' })
   uploadedBy: number;
 
+  @Column({ type: 'boolean', default: false })
+  deletedByCascade: boolean;
+
   @CreateDateColumn()
   uploadedAt: Date;
 

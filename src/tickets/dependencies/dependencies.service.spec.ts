@@ -89,8 +89,6 @@ describe('DependenciesService', () => {
   });
 
   describe('cascadeSoftDeleteDependencies', () => {
-    const parentDeletedAt = new Date('2026-05-29T10:00:00Z');
-
     function mockCascadeRows(
       rows: { id: number; ticketId: number; blockerId: number }[],
     ) {
@@ -118,7 +116,7 @@ describe('DependenciesService', () => {
         { id: 11, ticketId: 1, blockerId: 2 },
         { id: 12, ticketId: 3, blockerId: 1 },
       ]);
-      await service.cascadeSoftDeleteDependencies([1], parentDeletedAt, 42);
+      await service.cascadeSoftDeleteDependencies([1], 42);
       expect(audit.record).toHaveBeenCalledTimes(2);
       expect(audit.record).toHaveBeenNthCalledWith(1, {
         action: AuditAction.DEPENDENCY_DELETE,
@@ -143,7 +141,7 @@ describe('DependenciesService', () => {
         { id: 21, ticketId: 5, blockerId: 6 },
         { id: 22, ticketId: 7, blockerId: 5 },
       ]);
-      await service.cascadeSoftDeleteDependencies([5], parentDeletedAt, null);
+      await service.cascadeSoftDeleteDependencies([5], null);
       expect(audit.record).toHaveBeenCalledTimes(2);
       for (const call of audit.record.mock.calls) {
         expect(call[0]).toMatchObject({
@@ -155,7 +153,7 @@ describe('DependenciesService', () => {
 
     it('uses ActorType.USER when actorUserId is non-null', async () => {
       mockCascadeRows([{ id: 31, ticketId: 9, blockerId: 10 }]);
-      await service.cascadeSoftDeleteDependencies([9], parentDeletedAt, 7);
+      await service.cascadeSoftDeleteDependencies([9], 7);
       expect(audit.record).toHaveBeenCalledTimes(1);
       expect(audit.record.mock.calls[0][0]).toMatchObject({
         actor: ActorType.USER,
@@ -165,7 +163,7 @@ describe('DependenciesService', () => {
 
     it('is a no-op when no dependencies match', async () => {
       const updateBuilder = mockCascadeRows([]);
-      await service.cascadeSoftDeleteDependencies([99], parentDeletedAt, 1);
+      await service.cascadeSoftDeleteDependencies([99], 1);
       expect(audit.record).not.toHaveBeenCalled();
       expect(updateBuilder.execute).not.toHaveBeenCalled();
     });
