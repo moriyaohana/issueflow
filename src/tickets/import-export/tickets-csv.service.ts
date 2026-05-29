@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { parse } from 'csv-parse/sync';
+import { stringify } from 'csv-stringify/sync';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { TicketsService } from '../tickets.service';
@@ -9,6 +10,7 @@ import { AuditAction } from '../../common/enums/audit-action.enum';
 import { EntityType } from '../../common/enums/entity-type.enum';
 import { ActorType } from '../../common/enums/actor-type.enum';
 import { CreateTicketDto } from '../dto/create-ticket.dto';
+import { Ticket } from '../entities/ticket.entity';
 
 export interface ImportError {
   row: number;
@@ -21,22 +23,81 @@ export interface ImportResult {
   errors: ImportError[];
 }
 
+const COLUMNS = [
+  'id',
+  'title',
+  'description',
+  'status',
+  'priority',
+  'type',
+  'assigneeId',
+] as const;
+
+function rowFromTicket(t: Ticket): Record<string, unknown> {
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    status: t.status,
+    priority: t.priority,
+    type: t.type,
+    assigneeId: t.assigneeId ?? '',
+  };
+}
+
+function ticketFromRow(
+  raw: Record<string, string>,
+  projectId: number,
+): CreateTicketDto {
+  return plainToInstance(CreateTicketDto, {
+    title: raw.title,
+    description: raw.description,
+    status: raw.status,
+    priority: raw.priority,
+    type: raw.type,
+    projectId,
+    assigneeId: raw.assigneeId ? parseInt(raw.assigneeId, 10) : undefined,
+  });
+}
+
 @Injectable()
-export class TicketsImportService {
+export class TicketsCsvService {
   constructor(
     private readonly tickets: TicketsService,
     private readonly projects: ProjectsService,
     private readonly audit: AuditLogService,
   ) {}
 
+  async export(
+    projectId: number,
+    actorUserId: number | null = null,
+  ): Promise<string> {
+    const active = await this.projects.existsAndActive(projectId);
+    if (!active) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
+    const rows = await this.tickets.findAllForProject(projectId);
+    const csv = stringify(rows.map(rowFromTicket), {
+      header: true,
+      columns: [...COLUMNS],
+      quoted: true,
+    });
+    await this.audit.record({
+      action: AuditAction.TICKET_EXPORT,
+      entityType: EntityType.PROJECT,
+      entityId: projectId,
+      performedBy: actorUserId,
+      actor: ActorType.USER,
+      metadata: { ticketCount: rows.length },
+    });
+    return csv;
+  }
+
   async import(
     projectId: number,
-    file: { buffer: Buffer; originalname: string } | undefined,
+    file: { buffer: Buffer; originalname: string },
     actorUserId: number | null = null,
   ): Promise<ImportResult> {
-    if (!file) {
-      throw new BadRequestException('CSV file is required');
-    }
     const active = await this.projects.existsAndActive(projectId);
     if (!active) {
       throw new NotFoundException(`Project ${projectId} not found`);
@@ -49,16 +110,7 @@ export class TicketsImportService {
     const errors: ImportError[] = [];
     let created = 0;
     for (let i = 0; i < records.length; i++) {
-      const raw = records[i];
-      const dto = plainToInstance(CreateTicketDto, {
-        title: raw.title,
-        description: raw.description,
-        status: raw.status,
-        priority: raw.priority,
-        type: raw.type,
-        projectId,
-        assigneeId: raw.assigneeId ? parseInt(raw.assigneeId, 10) : undefined,
-      });
+      const dto = ticketFromRow(records[i], projectId);
       const violations = await validate(dto, { whitelist: true });
       if (violations.length > 0) {
         errors.push({

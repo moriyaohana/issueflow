@@ -1,4 +1,5 @@
 import * as request from 'supertest';
+import { HttpStatus } from '@nestjs/common';
 import { createTestApp, TestAppContext } from './test-app.factory';
 import { UserRole } from '../src/common/enums/user-role.enum';
 
@@ -79,7 +80,10 @@ describe('Tickets Export/Import (e2e)', () => {
       .post('/tickets/import')
       .set('Authorization', `Bearer ${adminToken}`)
       .field('projectId', String(projectIdB))
-      .attach('file', Buffer.from(exp.text), { filename: 'tickets.csv', contentType: 'text/csv' })
+      .attach('file', Buffer.from(exp.text), {
+        filename: 'tickets.csv',
+        contentType: 'text/csv',
+      })
       .expect(200);
     expect(imp.body.created).toBe(2);
     expect(imp.body.failed).toBe(0);
@@ -89,6 +93,26 @@ describe('Tickets Export/Import (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(listed.body.length).toBe(2);
+  });
+
+  it('import with no file attached returns 400', async () => {
+    await request(ctx.app.getHttpServer())
+      .post('/tickets/import')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .field('projectId', String(projectId))
+      .expect(HttpStatus.BAD_REQUEST);
+  });
+
+  it('import with a non-CSV mime type returns 400', async () => {
+    await request(ctx.app.getHttpServer())
+      .post('/tickets/import')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .field('projectId', String(projectId))
+      .attach('file', Buffer.from('not,a,csv'), {
+        filename: 'in.txt',
+        contentType: 'text/plain',
+      })
+      .expect(HttpStatus.BAD_REQUEST);
   });
 
   it('import into a soft-deleted project returns 404', async () => {
@@ -106,7 +130,10 @@ describe('Tickets Export/Import (e2e)', () => {
       .post('/tickets/import')
       .set('Authorization', `Bearer ${adminToken}`)
       .field('projectId', String(p.body.id))
-      .attach('file', Buffer.from(csv), { filename: 'in.csv', contentType: 'text/csv' })
+      .attach('file', Buffer.from(csv), {
+        filename: 'in.csv',
+        contentType: 'text/csv',
+      })
       .expect(404);
   });
 });
